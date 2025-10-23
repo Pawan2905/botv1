@@ -1,0 +1,38 @@
+# FastAPI and web server
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6
+
+# Azure OpenAI and AI libraries
+openai==1.12.0
+
+# Atlassian APIs
+atlassian-python-api==3.41.3
+jira==3.6.0
+
+# Vector database and embeddings
+chromadb==0.4.22
+sentence-transformers==2.3.1
+
+# Retrieval and search
+rank-bm25==0.2.2
+numpy==1.26.3
+
+# Document processing
+beautifulsoup4==4.12.3
+lxml==5.1.0
+
+# Configuration management
+pydantic==2.5.3
+pydantic-settings==2.1.0
+python-dotenv==1.0.1
+
+# Logging and utilities
+python-json-logger==2.0.7
+requests==2.31.0
+
+# Data processing
+pandas==2.2.0
+
+# Optional: For better tokenization
+nltk==3.8.1

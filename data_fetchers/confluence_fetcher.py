@@ -1,0 +1,207 @@
+"""Confluence data fetcher with authentication and pagination support."""
+
+import logging
+from typing import List, Dict, Any, Optional
+from atlassian import Confluence
+from bs4 import BeautifulSoup
+from datetime import datetime
+
+logger = logging.getLogger(__name__)
+
+
+class ConfluenceFetcher:
+    """Fetches documents from Confluence."""
+    
+    def __init__(
+        self,
+        url: str,
+        username: str,
+        api_token: str,
+        space_key: Optional[str] = None
+    ):
+        """
+        Initialize Confluence fetcher.
+        
+        Args:
+            url: Confluence instance URL
+            username: Confluence username/email
+            api_token: Confluence API token
+            space_key: Optional space key to filter pages
+        """
+        self.confluence = Confluence(
+            url=url,
+            username=username,
+            password=api_token,
+            cloud=True
+        )
+        self.space_key = space_key
+        logger.info(f"Initialized Confluence fetcher for {url}")
+    
+    def fetch_all_pages(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """
+        Fetch all pages from Confluence.
+        
+        Args:
+            limit: Maximum number of pages to fetch per request
+            
+        Returns:
+            List of page dictionaries with content and metadata
+        """
+        pages = []
+        start = 0
+        
+        try:
+            while True:
+                if self.space_key:
+                    response = self.confluence.get_all_pages_from_space(
+                        space=self.space_key,
+                        start=start,
+                        limit=limit,
+                        expand="body.storage,version,metadata.labels"
+                    )
+                else:
+                    response = self.confluence.get_all_pages_by_label(
+                        start=start,
+                        limit=limit,
+                        expand="body.storage,version,metadata.labels"
+                    )
+                
+                if not response:
+                    break
+                
+                for page in response:
+                    processed_page = self._process_page(page)
+                    if processed_page:
+                        pages.append(processed_page)
+                        logger.info(f"Fetched page: {processed_page['title']}")
+                
+                # Check if there are more pages
+                if len(response) < limit:
+                    break
+                
+                start += limit
+            
+            logger.info(f"Successfully fetched {len(pages)} pages from Confluence")
+            return pages
+            
+        except Exception as e:
+            logger.error(f"Error fetching Confluence pages: {e}")
+            raise
+    
+    def fetch_page_by_id(self, page_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Fetch a specific page by ID.
+        
+        Args:
+            page_id: Confluence page ID
+            
+        Returns:
+            Page dictionary with content and metadata
+        """
+        try:
+            page = self.confluence.get_page_by_id(
+                page_id=page_id,
+                expand="body.storage,version,metadata.labels"
+            )
+            return self._process_page(page)
+        except Exception as e:
+            logger.error(f"Error fetching page {page_id}: {e}")
+            return None
+    
+    def search_pages(self, cql: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """
+        Search pages using CQL (Confluence Query Language).
+        
+        Args:
+            cql: CQL query string
+            limit: Maximum number of results
+            
+        Returns:
+            List of matching pages
+        """
+        try:
+            results = self.confluence.cql(cql=cql, limit=limit)
+            pages = []
+            
+            for result in results.get("results", []):
+                page_id = result.get("content", {}).get("id")
+                if page_id:
+                    page = self.fetch_page_by_id(page_id)
+                    if page:
+                        pages.append(page)
+            
+            logger.info(f"Found {len(pages)} pages matching CQL query")
+            return pages
+            
+        except Exception as e:
+            logger.error(f"Error searching Confluence: {e}")
+            return []
+    
+    def _process_page(self, page: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Process and clean a Confluence page.
+        
+        Args:
+            page: Raw page data from Confluence API
+            
+        Returns:
+            Processed page dictionary
+        """
+        try:
+            # Extract HTML content
+            html_content = page.get("body", {}).get("storage", {}).get("value", "")
+            
+            # Parse HTML and extract text
+            soup = BeautifulSoup(html_content, "html.parser")
+            text_content = soup.get_text(separator="\n", strip=True)
+            
+            # Extract metadata
+            version = page.get("version", {})
+            labels = [label.get("name") for label in page.get("metadata", {}).get("labels", {}).get("results", [])]
+            
+            return {
+                "id": page.get("id"),
+                "title": page.get("title"),
+                "content": text_content,
+                "html_content": html_content,
+                "url": self.confluence.url + page.get("_links", {}).get("webui", ""),
+                "space": page.get("space", {}).get("key"),
+                "version": version.get("number"),
+                "last_updated": version.get("when"),
+                "last_updated_by": version.get("by", {}).get("displayName"),
+                "labels": labels,
+                "type": "confluence",
+                "source": "confluence"
+            }
+        except Exception as e:
+            logger.error(f"Error processing page: {e}")
+            return None
+    
+    def get_page_children(self, page_id: str) -> List[Dict[str, Any]]:
+        """
+        Get all child pages of a specific page.
+        
+        Args:
+            page_id: Parent page ID
+            
+        Returns:
+            List of child pages
+        """
+        try:
+            children = self.confluence.get_page_child_by_type(
+                page_id=page_id,
+                type="page",
+                expand="body.storage,version,metadata.labels"
+            )
+            
+            pages = []
+            for child in children:
+                processed_page = self._process_page(child)
+                if processed_page:
+                    pages.append(processed_page)
+            
+            return pages
+            
+        except Exception as e:
+            logger.error(f"Error fetching children of page {page_id}: {e}")
+            return []
