@@ -26,12 +26,13 @@ class BotService:
             api_version=settings.azure_openai_api_version
         )
         
-        # Initialize embeddings
+        # Initialize embeddings (with separate endpoint for APIM support)
         self.embeddings = AzureOpenAIEmbeddings(
-            endpoint=settings.azure_openai_endpoint,
-            api_key=settings.azure_openai_api_key,
-            deployment_name=settings.azure_openai_embedding_deployment,
-            api_version=settings.azure_openai_api_version
+            endpoint=settings.azure_embedding_endpoint,
+            api_key=settings.azure_embedding_key,
+            deployment_name=settings.azure_embedding_deployment,
+            api_version=settings.azure_embedding_api_version,
+            use_apim=settings.use_apim_for_embeddings
         )
         
         # Initialize ChromaDB store

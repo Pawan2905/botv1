@@ -9,31 +9,46 @@ logger = logging.getLogger(__name__)
 
 
 class AzureOpenAIEmbeddings:
-    """Generate embeddings using Azure OpenAI."""
+    """Generate embeddings using Azure OpenAI (supports both direct and APIM)."""
     
     def __init__(
         self,
         endpoint: str,
         api_key: str,
         deployment_name: str,
-        api_version: str = "2024-02-15-preview"
+        api_version: str = "2024-02-15-preview",
+        use_apim: bool = False
     ):
         """
         Initialize Azure OpenAI embeddings client.
         
         Args:
-            endpoint: Azure OpenAI endpoint URL
-            api_key: Azure OpenAI API key
+            endpoint: Azure OpenAI endpoint URL (or APIM endpoint)
+            api_key: Azure OpenAI API key or APIM subscription key
             deployment_name: Deployment name for embeddings model
             api_version: API version
+            use_apim: Whether using Azure API Management (subscription key in header)
         """
-        self.client = AzureOpenAI(
-            azure_endpoint=endpoint,
-            api_key=api_key,
-            api_version=api_version
-        )
+        self.use_apim = use_apim
         self.deployment_name = deployment_name
-        logger.info(f"Initialized Azure OpenAI embeddings with deployment: {deployment_name}")
+        
+        if use_apim:
+            # For APIM, use subscription key in the custom header
+            self.client = AzureOpenAI(
+                azure_endpoint=endpoint,
+                api_key=api_key,  # This will be treated as subscription key
+                api_version=api_version,
+                default_headers={"Ocp-Apim-Subscription-Key": api_key}
+            )
+            logger.info(f"Initialized Azure OpenAI embeddings via APIM with deployment: {deployment_name}")
+        else:
+            # Direct Azure OpenAI access
+            self.client = AzureOpenAI(
+                azure_endpoint=endpoint,
+                api_key=api_key,
+                api_version=api_version
+            )
+            logger.info(f"Initialized Azure OpenAI embeddings (direct) with deployment: {deployment_name}")
     
     def embed_documents(self, texts: List[str], batch_size: int = 16) -> List[List[float]]:
         """

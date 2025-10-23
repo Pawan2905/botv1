@@ -9,12 +9,18 @@ from pydantic import Field
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
     
-    # Azure OpenAI Configuration
+    # Azure OpenAI Configuration (for LLM)
     azure_openai_endpoint: str = Field(..., env="AZURE_OPENAI_ENDPOINT")
     azure_openai_api_key: str = Field(..., env="AZURE_OPENAI_API_KEY")
     azure_openai_deployment_name: str = Field(default="gpt-4", env="AZURE_OPENAI_DEPLOYMENT_NAME")
-    azure_openai_embedding_deployment: str = Field(default="text-embedding-ada-002", env="AZURE_OPENAI_EMBEDDING_DEPLOYMENT")
     azure_openai_api_version: str = Field(default="2024-02-15-preview", env="AZURE_OPENAI_API_VERSION")
+    
+    # Azure OpenAI Embeddings Configuration (APIM or Direct)
+    azure_embedding_endpoint: str = Field(..., env="AZURE_EMBEDDING_ENDPOINT")
+    azure_embedding_key: str = Field(..., env="AZURE_EMBEDDING_KEY")  # Can be API key or subscription key
+    azure_embedding_deployment: str = Field(default="text-embedding-ada-002", env="AZURE_EMBEDDING_DEPLOYMENT")
+    azure_embedding_api_version: str = Field(default="2024-02-15-preview", env="AZURE_EMBEDDING_API_VERSION")
+    use_apim_for_embeddings: bool = Field(default=True, env="USE_APIM_FOR_EMBEDDINGS")  # True if using APIM
     
     # Confluence Configuration
     confluence_url: str = Field(..., env="CONFLUENCE_URL")
