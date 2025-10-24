@@ -26,13 +26,13 @@ class Settings(BaseSettings):
     confluence_url: str = Field(..., env="CONFLUENCE_URL")
     confluence_username: str = Field(..., env="CONFLUENCE_USERNAME")
     confluence_api_token: str = Field(..., env="CONFLUENCE_API_TOKEN")
-    confluence_space_key: Optional[str] = Field(default=None, env="CONFLUENCE_SPACE_KEY")
+    confluence_space_key: Optional[str] = Field(default=None, env="CONFLUENCE_SPACE_KEY")  # If None, fetches from all spaces
     
     # Jira Configuration
     jira_url: str = Field(..., env="JIRA_URL")
     jira_username: str = Field(..., env="JIRA_USERNAME")
     jira_api_token: str = Field(..., env="JIRA_API_TOKEN")
-    jira_project_key: Optional[str] = Field(default=None, env="JIRA_PROJECT_KEY")
+    jira_project_key: Optional[str] = Field(default=None, env="JIRA_PROJECT_KEY")  # If None, fetches from all projects
     
     # ChromaDB Configuration
     chroma_persist_directory: str = Field(default="./chroma_db", env="CHROMA_PERSIST_DIRECTORY")

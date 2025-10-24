@@ -205,3 +205,42 @@ class ConfluenceFetcher:
         except Exception as e:
             logger.error(f"Error fetching children of page {page_id}: {e}")
             return []
+
+    def update_page(self, page_id: str, title: str, content: str, parent_id: Optional[str] = None, version_comment: str = "Updated via API") -> bool:
+        """
+        Update a Confluence page.
+        
+        Args:
+            page_id: The ID of the page to update.
+            title: The new title of the page.
+            content: The new content of the page in storage format.
+            parent_id: The ID of the parent page.
+            version_comment: A comment for the new version.
+            
+        Returns:
+            True if the page was updated successfully, False otherwise.
+        """
+        try:
+            # Get the current version of the page
+            page = self.confluence.get_page_by_id(page_id, expand="version")
+            if not page:
+                logger.error(f"Page with ID {page_id} not found.")
+                return False
+            
+            current_version = page['version']['number']
+            
+            status = self.confluence.update_page(
+                page_id=page_id,
+                title=title,
+                body=content,
+                parent_id=parent_id,
+                version_comment=version_comment,
+                minor_edit=True
+            )
+            
+            logger.info(f"Successfully updated page {page_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error updating page {page_id}: {e}")
+            return False

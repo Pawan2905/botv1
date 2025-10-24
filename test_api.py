@@ -36,15 +36,20 @@ def test_query():
     queries = [
         {"query": "authentication", "method": "hybrid"},
         {"query": "bug fix", "method": "dense"},
-        {"query": "API documentation", "method": "sparse"}
+        {"query": "API documentation", "method": "sparse"},
+        {"query": "What is the process for fixing bugs?"}
     ]
     
     for q in queries:
         try:
-            print(f"\nQuery: '{q['query']}' (method: {q['method']})")
+            payload = {"query": q["query"], "top_k": 3}
+            if "method" in q:
+                payload["method"] = q["method"]
+            
+            print(f"\nQuery: '{q['query']}' (method: {q.get('method', 'default')})")
             response = requests.post(
                 f"{BASE_URL}/query",
-                json={"query": q["query"], "top_k": 3, "method": q["method"]}
+                json=payload
             )
             response.raise_for_status()
             data = response.json()

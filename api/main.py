@@ -11,7 +11,7 @@ from config import settings
 from api.models import (
     QueryRequest, QueryResponse, ChatRequest, ChatResponse,
     JiraIssueCreate, JiraIssueUpdate, JiraCommentAdd,
-    IndexRequest, IndexResponse, HealthResponse
+    IndexRequest, IndexResponse, HealthResponse, ConfluencePageUpdate
 )
 from api.bot_service import BotService
 
@@ -147,6 +147,8 @@ async def query_knowledge_base(request: QueryRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+
+
 @app.post("/chat", response_model=ChatResponse, tags=["Chat"])
 async def chat_with_bot(request: ChatRequest):
     """
@@ -253,6 +255,25 @@ async def search_jira_issues(query: str, max_results: int = 20):
         return {"query": query, "results": issues, "total": len(issues)}
     except Exception as e:
         logger.error(f"Failed to search Jira issues: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/confluence/page/{page_id}", tags=["Confluence"])
+async def update_confluence_page(page_id: str, request: ConfluencePageUpdate):
+    """Update a Confluence page."""
+    try:
+        success = bot_service.update_confluence_page(
+            page_id=page_id,
+            title=request.title,
+            content=request.content
+        )
+        
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to update page")
+        
+        return {"message": "Page updated successfully", "page_id": page_id}
+    except Exception as e:
+        logger.error(f"Failed to update Confluence page: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

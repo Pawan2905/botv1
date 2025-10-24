@@ -27,13 +27,22 @@ class JiraFetcher:
             api_token: Jira API token
             project_key: Optional project key to filter issues
         """
-        self.jira = JIRA(
-            server=url,
-            basic_auth=(username, api_token)
-        )
-        self.project_key = project_key
-        self.url = url
-        logger.info(f"Initialized Jira fetcher for {url}")
+        try:
+            self.jira = JIRA(
+                server=url,
+                basic_auth=(username, api_token)  # For Jira Cloud, api_token is used as password
+            )
+            self.project_key = project_key
+            self.url = url
+            logger.info(f"Initialized Jira fetcher for {url}")
+            
+            # Test connection
+            self.jira.current_user()
+            logger.info("Jira connection test successful")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize Jira connection: {e}")
+            raise
     
     def fetch_all_issues(self, jql: Optional[str] = None, max_results: int = 1000) -> List[Dict[str, Any]]:
         """

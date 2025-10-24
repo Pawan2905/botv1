@@ -319,6 +319,14 @@ class BotService:
         except Exception as e:
             logger.error(f"Failed to search Jira issues: {e}")
             raise
+
+    def update_confluence_page(self, page_id: str, title: str, content: str) -> bool:
+        """Update a Confluence page."""
+        try:
+            return self.confluence_fetcher.update_page(page_id, title, content)
+        except Exception as e:
+            logger.error(f"Failed to update Confluence page: {e}")
+            raise
     
     def get_stats(self) -> Dict[str, Any]:
         """Get system statistics."""

@@ -7,8 +7,8 @@ from pydantic import BaseModel, Field
 class QueryRequest(BaseModel):
     """Request model for querying the knowledge base."""
     query: str = Field(..., description="Query text")
-    top_k: int = Field(default=5, description="Number of results to return", ge=1, le=20)
-    method: str = Field(default="hybrid", description="Retrieval method: 'hybrid', 'dense', or 'sparse'")
+    top_k: Optional[int] = Field(default=5, description="Number of results to return", ge=1, le=20)
+    method: Optional[str] = Field(default="hybrid", description="Retrieval method: 'hybrid', 'dense', or 'sparse'")
     filters: Optional[Dict[str, Any]] = Field(default=None, description="Metadata filters")
 
 
@@ -58,6 +58,12 @@ class JiraIssueUpdate(BaseModel):
 class JiraCommentAdd(BaseModel):
     """Request model for adding a comment to a Jira issue."""
     comment: str = Field(..., description="Comment text")
+
+
+class ConfluencePageUpdate(BaseModel):
+    """Request model for updating a Confluence page."""
+    title: str = Field(..., description="New page title")
+    content: str = Field(..., description="New page content in storage format")
 
 
 class IndexRequest(BaseModel):
