@@ -312,10 +312,16 @@ class BotService:
             logger.error(f"Failed to get Jira issue: {e}")
             raise
     
-    def search_jira_issues(self, query: str, max_results: int = 20) -> List[Dict[str, Any]]:
-        """Search Jira issues."""
+    def search_jira_issues(self, query: Optional[str] = None, jql: Optional[str] = None, max_results: int = 20) -> List[Dict[str, Any]]:
+        """Search Jira issues using either a text query or a JQL query."""
         try:
-            return self.jira_fetcher.search_issues(query, max_results)
+            if jql:
+                return self.jira_fetcher.fetch_all_issues(jql=jql, max_results=max_results)
+            elif query:
+                return self.jira_fetcher.search_issues(query, max_results)
+            else:
+                # By default, return the most recently updated issues if no query or JQL is provided.
+                return self.jira_fetcher.fetch_all_issues(max_results=max_results)
         except Exception as e:
             logger.error(f"Failed to search Jira issues: {e}")
             raise

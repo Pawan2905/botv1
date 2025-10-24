@@ -247,12 +247,19 @@ async def get_jira_issue(issue_key: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+from typing import Optional
+
 @app.get("/jira/search", tags=["Jira"])
-async def search_jira_issues(query: str, max_results: int = 20):
-    """Search Jira issues using text search."""
+async def search_jira_issues(query: Optional[str] = None, jql: Optional[str] = None, max_results: int = 20):
+    """Search Jira issues using a text query or a JQL query."""
     try:
-        issues = bot_service.search_jira_issues(query, max_results)
-        return {"query": query, "results": issues, "total": len(issues)}
+        if not query and not jql:
+            raise HTTPException(status_code=400, detail="Either 'query' or 'jql' must be provided.")
+        
+        issues = bot_service.search_jira_issues(query=query, jql=jql, max_results=max_results)
+        
+        search_param = {"query": query} if query else {"jql": jql}
+        return {**search_param, "results": issues, "total": len(issues)}
     except Exception as e:
         logger.error(f"Failed to search Jira issues: {e}")
         raise HTTPException(status_code=500, detail=str(e))
