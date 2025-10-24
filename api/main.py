@@ -247,6 +247,21 @@ async def get_jira_issue(issue_key: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/jira/issue/{issue_key}/summary", tags=["Jira"])
+async def summarize_jira_issue(issue_key: str):
+    """Summarize a Jira issue."""
+    try:
+        summary = bot_service.summarize_jira_issue(issue_key)
+        
+        if not summary:
+            raise HTTPException(status_code=404, detail="Issue not found or could not be summarized.")
+            
+        return {"issue_key": issue_key, "summary": summary}
+    except Exception as e:
+        logger.error(f"Failed to summarize Jira issue: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 from typing import Optional
 
 @app.get("/jira/search", tags=["Jira"])

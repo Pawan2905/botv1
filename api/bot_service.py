@@ -1,6 +1,7 @@
 """Bot service integrating all components."""
 
 import logging
+import re
 from typing import List, Dict, Any, Optional
 from openai import AzureOpenAI
 
@@ -195,6 +196,12 @@ class BotService:
             Dictionary with response and sources
         """
         try:
+            # Handle specific Jira queries
+            if use_jira_live:
+                jira_response = self._handle_jira_specific_queries(message)
+                if jira_response:
+                    return jira_response
+
             # Get live Jira data if requested
             live_jira_context = ""
             if use_jira_live:
@@ -250,6 +257,45 @@ class BotService:
         except Exception as e:
             logger.error(f"Chat failed: {e}")
             raise
+
+    def _handle_jira_specific_queries(self, message: str) -> Optional[Dict[str, Any]]:
+        """Handle specific Jira-related questions."""
+        
+        # Pattern to find assignee of a ticket
+        assignee_match = re.search(r"who is the assignee of ([A-Z]+-\d+)", message, re.IGNORECASE)
+        if assignee_match:
+            issue_key = assignee_match.group(1).upper()
+            issue = self.get_jira_issue(issue_key)
+            if issue and issue.get('assignee'):
+                return {"response": f"The assignee of {issue_key} is {issue['assignee']}.", "sources": [issue]}
+            elif issue:
+                return {"response": f"{issue_key} is currently unassigned.", "sources": [issue]}
+            else:
+                return {"response": f"Sorry, I could not find the ticket {issue_key}.", "sources": []}
+
+        # Pattern for high priority tickets
+        if "high priority tickets" in message.lower():
+            jql = "priority in (High, Highest) ORDER BY updated DESC"
+            issues = self.search_jira_issues(jql=jql, max_results=5)
+            if issues:
+                response_text = "Here are the top 5 high priority tickets:\n"
+                for issue in issues:
+                    response_text += f"- {issue['key']}: {issue['title']} (Status: {issue['status']})\n"
+                return {"response": response_text, "sources": issues}
+            else:
+                return {"response": "I couldn't find any high priority tickets.", "sources": []}
+
+        # Pattern for summarizing a ticket
+        summary_match = re.search(r"(summarize|what are the blockers in|what are the deliverables of) ([A-Z]+-\d+)", message, re.IGNORECASE)
+        if summary_match:
+            issue_key = summary_match.group(2).upper()
+            summary = self.summarize_jira_issue(issue_key)
+            if summary:
+                return {"response": summary, "sources": [self.get_jira_issue(issue_key)]}
+            else:
+                return {"response": f"Sorry, I could not generate a summary for {issue_key}.", "sources": []}
+
+        return None
     
     def create_jira_issue(
         self,
@@ -324,6 +370,59 @@ class BotService:
                 return self.jira_fetcher.fetch_all_issues(max_results=max_results)
         except Exception as e:
             logger.error(f"Failed to search Jira issues: {e}")
+            raise
+
+    def summarize_jira_issue(self, issue_key: str) -> Optional[str]:
+        """
+        Generate a summary for a Jira issue using the LLM.
+        
+        Args:
+            issue_key: The key of the Jira issue.
+            
+        Returns:
+            A summary string or None if the issue is not found.
+        """
+        try:
+            issue = self.get_jira_issue(issue_key)
+            if not issue:
+                return None
+
+            # Prepare the content for the LLM
+            content_for_summary = f"""
+            Please provide a concise summary of the following Jira ticket.
+            Focus on the main objective, the latest status, and any key comments or blockers.
+
+            Ticket Key: {issue.get('key')}
+            Title: {issue.get('title')}
+            Status: {issue.get('status')}
+            Assignee: {issue.get('assignee', 'Unassigned')}
+            Reporter: {issue.get('reporter')}
+            
+            Description:
+            {issue.get('description', 'No description provided.')}
+
+            Content:
+            {issue.get('content')}
+            """
+
+            messages = [
+                {"role": "system", "content": "You are an expert at summarizing Jira tickets."},
+                {"role": "user", "content": content_for_summary}
+            ]
+
+            # Generate summary
+            response = self.llm_client.chat.completions.create(
+                model=settings.azure_openai_deployment_name,
+                messages=messages,
+                temperature=0.5,
+                max_tokens=500
+            )
+            
+            summary = response.choices[0].message.content
+            return summary
+
+        except Exception as e:
+            logger.error(f"Failed to generate summary for issue {issue_key}: {e}")
             raise
 
     def update_confluence_page(self, page_id: str, title: str, content: str) -> bool:
