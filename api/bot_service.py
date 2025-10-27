@@ -1,7 +1,8 @@
-"""Bot service integrating all components."""
+"""Bot service integrating all components with an agentic architecture."""
 
 import logging
 import re
+import json
 from typing import List, Dict, Any, Optional
 from openai import AzureOpenAI
 
@@ -14,20 +15,20 @@ logger = logging.getLogger(__name__)
 
 
 class BotService:
-    """Main service class integrating all components."""
+    """
+    Main service class integrating all components.
+    Re-architected to use an agentic approach for routing and handling queries.
+    """
     
     def __init__(self):
-        """Initialize the bot service."""
+        """Initialize the bot service and its components."""
         logger.info("Initializing BotService...")
         
-        # Initialize Azure OpenAI client
         self.llm_client = AzureOpenAI(
             azure_endpoint=settings.azure_openai_endpoint,
             api_key=settings.azure_openai_api_key,
             api_version=settings.azure_openai_api_version
         )
-        
-        # Initialize embeddings
         self.embeddings = AzureOpenAIEmbeddings(
             endpoint=settings.azure_embedding_endpoint,
             api_key=settings.azure_embedding_key,
@@ -35,34 +36,18 @@ class BotService:
             api_version=settings.azure_embedding_api_version,
             use_apim=settings.use_apim_for_embeddings
         )
-        
-        # Initialize ChromaDB store
         self.chroma_store = ChromaStore(
             persist_directory=settings.chroma_persist_directory,
             collection_name=settings.chroma_collection_name
         )
-        
-        # Initialize chunker
-        self.chunker = TextChunker(
-            chunk_size=settings.chunk_size,
-            chunk_overlap=settings.chunk_overlap
-        )
-        
-        # Initialize hybrid retriever
-        self.retriever = HybridRetriever(
-            chroma_store=self.chroma_store,
-            embeddings=self.embeddings,
-            alpha=settings.hybrid_alpha
-        )
-        
-        # Initialize data fetchers
+        self.chunker = TextChunker(chunk_size=settings.chunk_size, chunk_overlap=settings.chunk_overlap)
+        self.retriever = HybridRetriever(chroma_store=self.chroma_store, embeddings=self.embeddings, alpha=settings.hybrid_alpha)
         self.confluence_fetcher = ConfluenceFetcher(
             url=settings.confluence_url,
             username=settings.confluence_username,
             api_token=settings.confluence_api_token,
             space_key=settings.confluence_space_key
         )
-        
         self.jira_fetcher = JiraFetcher(
             url=settings.jira_url,
             username=settings.jira_username,
@@ -80,119 +65,103 @@ class BotService:
         use_jira_live: bool = False
     ) -> Dict[str, Any]:
         """
-        Chat with the bot using an agentic approach.
-        The bot will route the query to the appropriate tool (Jira, Confluence, or General RAG).
+        Main chat entry point. Routes user query to the appropriate agent/tool.
         """
         try:
-            # Route the query to the appropriate agent
-            agent_decision = self._route_query(message)
-
-            # Execute the chosen agent's logic
-            if agent_decision["agent"] == "jira":
-                return self._execute_jira_agent(agent_decision["task"], agent_decision["params"])
-            else:  # Default to general RAG for Confluence or general queries
-                return self._execute_rag_query(message, conversation_history, top_k, use_jira_live)
+            tool_call = self._get_tool_call(message)
+            
+            if tool_call and tool_call.get("tool_name"):
+                tool_name = tool_call["tool_name"]
+                args = tool_call["args"]
+                
+                # Execute the selected tool
+                if hasattr(self, f"_tool_{tool_name}"):
+                    tool_method = getattr(self, f"_tool_{tool_name}")
+                    return tool_method(**args)
+            
+            # Fallback to general RAG query if no specific tool is chosen
+            return self._tool_rag_search(query=message, conversation_history=conversation_history, top_k=top_k)
 
         except Exception as e:
             logger.error(f"Chat failed: {e}")
-            raise
+            return {"response": "Sorry, I encountered an error while processing your request.", "sources": []}
 
-    def _route_query(self, message: str) -> Dict[str, Any]:
+    def _get_tool_call(self, message: str) -> Optional[Dict[str, Any]]:
         """
-        Intelligently routes the user's query to the correct agent (Jira or General).
+        Uses an LLM to determine which tool to call based on the user's message.
         """
-        # Regex to find Jira ticket keys (e.g., PROJ-123)
-        jira_ticket_match = re.search(r"([A-Z]+-\d+)", message, re.IGNORECASE)
+        tools_json = json.dumps(self._get_available_tools(), indent=2)
+        system_prompt = f"""
+You are an intelligent routing agent. Your job is to analyze the user's query and determine which tool is best suited to handle it.
+You must respond in JSON format with the tool name and the arguments required by that tool.
+
+Available tools:
+{tools_json}
+
+If no specific tool seems appropriate, respond with an empty JSON object: {{}}.
+"""
         
-        # Keywords that strongly suggest a Jira-related query
-        jira_keywords = ["jira", "ticket", "issue", "assignee", "priority", "blockers", "deliverables"]
-
-        # --- Jira Agent Routing ---
-        if jira_ticket_match or any(keyword in message.lower() for keyword in jira_keywords):
-            issue_key = jira_ticket_match.group(1).upper() if jira_ticket_match else None
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": message}
+        ]
+        
+        try:
+            response = self.llm_client.chat.completions.create(
+                model=settings.azure_openai_deployment_name,
+                messages=messages,
+                temperature=0,
+                max_tokens=500,
+                response_format={"type": "json_object"}
+            )
             
-            # Task: Summarization
-            if "summarize" in message.lower() and issue_key:
-                lines_match = re.search(r"in (\w+|\d+) lines", message, re.IGNORECASE)
-                length_constraint = lines_match.group(1) if lines_match else None
-                return {"agent": "jira", "task": "summarize", "params": {"issue_key": issue_key, "length_constraint": length_constraint}}
+            tool_call_str = response.choices[0].message.content
+            return json.loads(tool_call_str)
+        except Exception as e:
+            logger.error(f"Failed to get tool call from LLM: {e}")
+            return None
 
-            # Task: Get Assignee
-            if "assignee of" in message.lower() and issue_key:
-                return {"agent": "jira", "task": "get_assignee", "params": {"issue_key": issue_key}}
+    # --- Agentic Tools ---
 
-            # Task: Get Blockers or Deliverables (routes to a detailed summary)
-            if ("blockers" in message.lower() or "deliverables" in message.lower()) and issue_key:
-                return {"agent": "jira", "task": "summarize_details", "params": {"issue_key": issue_key, "focus": "blockers/deliverables"}}
+    def _tool_get_issue_status(self, issue_key: str) -> Dict[str, Any]:
+        """Tool to get the status of a specific Jira ticket."""
+        issue = self.get_jira_issue(issue_key)
+        if issue and issue.get('status'):
+            return {"response": f"The status of ticket {issue_key} is '{issue['status']}'.", "sources": [issue]}
+        return {"response": f"Sorry, I could not find the ticket {issue_key}.", "sources": []}
 
-            # Task: High Priority Tickets
-            if "high priority tickets" in message.lower():
-                return {"agent": "jira", "task": "high_priority_tickets", "params": {}}
+    def _tool_get_assignee(self, issue_key: str) -> Dict[str, Any]:
+        """Tool to get the assignee of a specific Jira ticket."""
+        issue = self.get_jira_issue(issue_key)
+        if issue and issue.get('assignee'):
+            return {"response": f"The assignee of {issue_key} is {issue['assignee']}.", "sources": [issue]}
+        elif issue:
+            return {"response": f"{issue_key} is currently unassigned.", "sources": [issue]}
+        return {"response": f"Sorry, I could not find the ticket {issue_key}.", "sources": []}
 
-        # --- Default to General Agent ---
-        return {"agent": "general", "task": "rag_query", "params": {"query": message}}
+    def _tool_summarize_issue(self, issue_key: str, length_constraint: Optional[str] = None, focus: Optional[str] = None) -> Dict[str, Any]:
+        """Tool to summarize a Jira ticket with optional constraints."""
+        summary = self.summarize_jira_issue(issue_key, length_constraint, focus)
+        if summary:
+            return {"response": summary, "sources": [self.get_jira_issue(issue_key)]}
+        return {"response": f"Sorry, I could not generate a summary for {issue_key}.", "sources": []}
 
-    def _execute_jira_agent(self, task: str, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Executes a specific Jira-related task."""
-        
-        if task == "summarize":
-            issue_key = params["issue_key"]
-            summary = self.summarize_jira_issue(issue_key, length_constraint=params.get("length_constraint"))
-            if summary:
-                return {"response": summary, "sources": [self.get_jira_issue(issue_key)]}
-            else:
-                return {"response": f"Sorry, I could not generate a summary for {issue_key}.", "sources": []}
+    def _tool_list_high_priority_tickets(self) -> Dict[str, Any]:
+        """Tool to list high priority tickets."""
+        jql = "priority in (High, Highest) ORDER BY updated DESC"
+        issues = self.search_jira_issues(jql=jql, max_results=5)
+        if issues:
+            response_text = "Here are the top 5 high priority tickets:\n"
+            for issue in issues:
+                response_text += f"- {issue['key']}: {issue['title']} (Status: {issue['status']})\n"
+            return {"response": response_text, "sources": issues}
+        return {"response": "I couldn't find any high priority tickets.", "sources": []}
 
-        if task == "get_assignee":
-            issue_key = params["issue_key"]
-            issue = self.get_jira_issue(issue_key)
-            if issue and issue.get('assignee'):
-                return {"response": f"The assignee of {issue_key} is {issue['assignee']}.", "sources": [issue]}
-            elif issue:
-                return {"response": f"{issue_key} is currently unassigned.", "sources": [issue]}
-            else:
-                return {"response": f"Sorry, I could not find the ticket {issue_key}.", "sources": []}
-
-        if task == "summarize_details":
-            issue_key = params["issue_key"]
-            summary = self.summarize_jira_issue(issue_key, focus=params.get("focus"))
-            if summary:
-                return {"response": summary, "sources": [self.get_jira_issue(issue_key)]}
-            else:
-                return {"response": f"Sorry, I could not find details on blockers or deliverables for {issue_key}.", "sources": []}
-
-        if task == "high_priority_tickets":
-            jql = "priority in (High, Highest) ORDER BY updated DESC"
-            issues = self.search_jira_issues(jql=jql, max_results=5)
-            if issues:
-                response_text = "Here are the top 5 high priority tickets:\n"
-                for issue in issues:
-                    response_text += f"- {issue['key']}: {issue['title']} (Status: {issue['status']})\n"
-                return {"response": response_text, "sources": issues}
-            else:
-                return {"response": "I couldn't find any high priority tickets.", "sources": []}
-
-        return {"response": "Sorry, I'm not sure how to handle that Jira request.", "sources": []}
-
-    def _execute_rag_query(self, message: str, conversation_history: Optional[List[Dict[str, str]]], top_k: int, use_jira_live: bool) -> Dict[str, Any]:
-        """Executes the general RAG query for Confluence or general questions."""
-        
-        live_jira_context = ""
-        if use_jira_live:
-            logger.info("Fetching live Jira data for context...")
-            jira_issues = self.jira_fetcher.search_issues(message, max_results=3)
-            if jira_issues:
-                live_jira_context = "\n\n=== Live Jira Issues for Context ===\n"
-                for issue in jira_issues:
-                    live_jira_context += f"\n{issue['key']}: {issue['title']} (Status: {issue['status']})\n"
-        
-        results = self.query(message, top_k=top_k, method="hybrid")
+    def _tool_rag_search(self, query: str, conversation_history: Optional[List[Dict[str, str]]] = None, top_k: int = 5) -> Dict[str, Any]:
+        """Tool for general RAG search over Confluence and Jira."""
+        results = self.query(query, top_k=top_k, method="hybrid")
         context = self._build_context(results)
-        
-        if live_jira_context:
-            context += live_jira_context
-            
-        messages = self._build_messages(message, context, conversation_history)
+        messages = self._build_messages(query, context, conversation_history)
         
         response = self.llm_client.chat.completions.create(
             model=settings.azure_openai_deployment_name,
@@ -206,6 +175,42 @@ class BotService:
         
         return {"response": answer, "sources": sources}
 
+    def _get_available_tools(self) -> List[Dict[str, Any]]:
+        """Returns a list of available tools for the agentic router."""
+        return [
+            {
+                "tool_name": "get_issue_status",
+                "description": "Get the status of a specific Jira ticket.",
+                "args": {"issue_key": "The Jira ticket key (e.g., 'PROJ-123')."}
+            },
+            {
+                "tool_name": "get_assignee",
+                "description": "Find out who is assigned to a specific Jira ticket.",
+                "args": {"issue_key": "The Jira ticket key."}
+            },
+            {
+                "tool_name": "summarize_issue",
+                "description": "Summarize a Jira ticket. Can also focus on blockers or deliverables.",
+                "args": {
+                    "issue_key": "The Jira ticket key.",
+                    "length_constraint": "Optional. A constraint for the summary length (e.g., 'two lines').",
+                    "focus": "Optional. The specific focus of the summary (e.g., 'blockers', 'deliverables')."
+                }
+            },
+            {
+                "tool_name": "list_high_priority_tickets",
+                "description": "List all high-priority tickets.",
+                "args": {}
+            },
+            {
+                "tool_name": "rag_search",
+                "description": "Perform a general search over the knowledge base (Confluence and Jira). Use this for how-to questions, documentation lookups, and general queries.",
+                "args": {"query": "The user's search query."}
+            }
+        ]
+
+    # --- Helper and Existing Methods ---
+
     def summarize_jira_issue(self, issue_key: str, length_constraint: Optional[str] = None, focus: Optional[str] = None) -> Optional[str]:
         """
         Generate a summary for a Jira issue using the LLM, with optional constraints.
@@ -217,9 +222,9 @@ class BotService:
 
             prompt = "Please provide a concise summary of the following Jira ticket."
             if length_constraint:
-                prompt += f" The summary should be about {length_constraint} lines long."
-            if focus == "blockers/deliverables":
-                prompt += " Focus specifically on any mentioned blockers, dependencies, or deliverables. Analyze the description and comments to identify these."
+                prompt += f" The summary should be about {length_constraint}."
+            if focus:
+                prompt += f" Focus specifically on any mentioned {focus}."
             else:
                 prompt += " Focus on the main objective, the latest status, and any key comments."
 
@@ -252,208 +257,76 @@ class BotService:
             logger.error(f"Failed to generate summary for issue {issue_key}: {e}")
             raise
     
-    # --- Other existing methods ---
-    
     def index_data(self, source: str = "both", refresh: bool = False) -> Dict[str, Any]:
-        """
-        Index data from Confluence and/or Jira.
-        """
         logger.info(f"Starting indexing from {source} (refresh={refresh})")
+        if refresh:
+            self.chroma_store.reset_collection()
         
-        try:
-            if refresh:
-                logger.info("Refreshing collection...")
-                self.chroma_store.reset_collection()
-            
-            all_documents = []
-            
-            if source in ["confluence", "both"]:
-                logger.info("Fetching Confluence pages...")
-                confluence_pages = self.confluence_fetcher.fetch_all_pages()
-                all_documents.extend(confluence_pages)
-                logger.info(f"Fetched {len(confluence_pages)} Confluence pages")
-            
-            if source in ["jira", "both"]:
-                logger.info("Fetching Jira issues...")
-                jira_issues = self.jira_fetcher.fetch_all_issues()
-                all_documents.extend(jira_issues)
-                logger.info(f"Fetched {len(jira_issues)} Jira issues")
-            
-            if not all_documents:
-                logger.warning("No documents fetched")
-                return {"status": "completed", "documents_indexed": 0, "chunks_created": 0}
-            
-            logger.info("Chunking documents...")
-            chunks = self.chunker.chunk_documents(all_documents)
-            logger.info(f"Created {len(chunks)} chunks")
-            
-            logger.info("Generating embeddings...")
-            chunk_texts = [chunk["content"] for chunk in chunks]
-            embeddings = self.embeddings.embed_documents(chunk_texts)
-            logger.info(f"Generated {len(embeddings)} embeddings")
-            
-            logger.info("Adding to ChromaDB...")
-            self.chroma_store.add_documents(chunks, embeddings)
-            
-            logger.info("Indexing for BM25...")
-            self.retriever.index_documents(chunks)
-            
-            logger.info("Indexing completed successfully")
-            
-            return {"status": "completed", "documents_indexed": len(all_documents), "chunks_created": len(chunks)}
-            
-        except Exception as e:
-            logger.error(f"Indexing failed: {e}")
-            raise
+        all_documents = []
+        if source in ["confluence", "both"]:
+            all_documents.extend(self.confluence_fetcher.fetch_all_pages())
+        if source in ["jira", "both"]:
+            all_documents.extend(self.jira_fetcher.fetch_all_issues())
+        
+        if not all_documents:
+            return {"status": "completed", "documents_indexed": 0, "chunks_created": 0}
+        
+        chunks = self.chunker.chunk_documents(all_documents)
+        chunk_texts = [chunk["content"] for chunk in chunks]
+        embeddings = self.embeddings.embed_documents(chunk_texts)
+        self.chroma_store.add_documents(chunks, embeddings)
+        self.retriever.index_documents(chunks)
+        
+        return {"status": "completed", "documents_indexed": len(all_documents), "chunks_created": len(chunks)}
     
-    def query(
-        self,
-        query: str,
-        top_k: int = 5,
-        method: str = "hybrid",
-        filters: Optional[Dict[str, Any]] = None
-    ) -> List[Dict[str, Any]]:
-        """
-        Query the knowledge base.
-        """
-        try:
-            results = self.retriever.retrieve(query=query, top_k=top_k, filters=filters, method=method)
-            return results
-        except Exception as e:
-            logger.error(f"Query failed: {e}")
-            raise
+    def query(self, query: str, top_k: int = 5, method: str = "hybrid", filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        return self.retriever.retrieve(query=query, top_k=top_k, filters=filters, method=method)
     
-    def create_jira_issue(
-        self,
-        project_key: str,
-        summary: str,
-        description: str,
-        issue_type: str = "Task",
-        priority: Optional[str] = None,
-        labels: Optional[List[str]] = None
-    ) -> Optional[Dict[str, Any]]:
-        """Create a new Jira issue."""
-        try:
-            kwargs = {}
-            if priority:
-                kwargs["priority"] = {"name": priority}
-            if labels:
-                kwargs["labels"] = labels
-            
-            issue = self.jira_fetcher.create_issue(project_key=project_key, summary=summary, description=description, issue_type=issue_type, **kwargs)
-            return issue
-        except Exception as e:
-            logger.error(f"Failed to create Jira issue: {e}")
-            raise
+    def create_jira_issue(self, project_key: str, summary: str, description: str, issue_type: str = "Task", priority: Optional[str] = None, labels: Optional[List[str]] = None) -> Optional[Dict[str, Any]]:
+        kwargs = {}
+        if priority: kwargs["priority"] = {"name": priority}
+        if labels: kwargs["labels"] = labels
+        return self.jira_fetcher.create_issue(project_key=project_key, summary=summary, description=description, issue_type=issue_type, **kwargs)
     
     def update_jira_issue(self, issue_key: str, **fields) -> Optional[Dict[str, Any]]:
-        """Update a Jira issue."""
-        try:
-            return self.jira_fetcher.update_issue(issue_key, **fields)
-        except Exception as e:
-            logger.error(f"Failed to update Jira issue: {e}")
-            raise
+        return self.jira_fetcher.update_issue(issue_key, **fields)
     
     def transition_jira_issue(self, issue_key: str, status: str) -> bool:
-        """Transition a Jira issue to a new status."""
-        try:
-            return self.jira_fetcher.transition_issue(issue_key, status)
-        except Exception as e:
-            logger.error(f"Failed to transition Jira issue: {e}")
-            raise
+        return self.jira_fetcher.transition_issue(issue_key, status)
     
     def add_jira_comment(self, issue_key: str, comment: str) -> bool:
-        """Add a comment to a Jira issue."""
-        try:
-            return self.jira_fetcher.add_comment(issue_key, comment)
-        except Exception as e:
-            logger.error(f"Failed to add Jira comment: {e}")
-            raise
+        return self.jira_fetcher.add_comment(issue_key, comment)
     
     def get_jira_issue(self, issue_key: str) -> Optional[Dict[str, Any]]:
-        """Get a Jira issue by key."""
-        try:
-            return self.jira_fetcher.fetch_issue_by_key(issue_key)
-        except Exception as e:
-            logger.error(f"Failed to get Jira issue: {e}")
-            raise
+        return self.jira_fetcher.fetch_issue_by_key(issue_key)
     
     def search_jira_issues(self, query: Optional[str] = None, jql: Optional[str] = None, max_results: int = 20) -> List[Dict[str, Any]]:
-        """Search Jira issues using either a text query or a JQL query."""
-        try:
-            if jql:
-                return self.jira_fetcher.fetch_all_issues(jql=jql, max_results=max_results)
-            elif query:
-                return self.jira_fetcher.search_issues(query, max_results)
-            else:
-                return self.jira_fetcher.fetch_all_issues(max_results=max_results)
-        except Exception as e:
-            logger.error(f"Failed to search Jira issues: {e}")
-            raise
+        if jql:
+            return self.jira_fetcher.fetch_all_issues(jql=jql, max_results=max_results)
+        elif query:
+            return self.jira_fetcher.search_issues(query, max_results)
+        return self.jira_fetcher.fetch_all_issues(max_results=max_results)
 
     def update_confluence_page(self, page_id: str, title: str, content: str) -> bool:
-        """Update a Confluence page."""
-        try:
-            return self.confluence_fetcher.update_page(page_id, title, content)
-        except Exception as e:
-            logger.error(f"Failed to update Confluence page: {e}")
-            raise
+        return self.confluence_fetcher.update_page(page_id, title, content)
     
     def get_stats(self) -> Dict[str, Any]:
-        """Get system statistics."""
         return {
             "chroma": self.chroma_store.get_stats(),
             "retrieval": self.retriever.get_retrieval_stats()
         }
     
     def _build_context(self, results: List[Dict[str, Any]]) -> str:
-        """Build context string from retrieved documents."""
-        if not results:
-            return "No relevant information found."
-        
-        context_parts = []
-        for i, result in enumerate(results, 1):
-            metadata = result.get("metadata", {})
-            content = result.get("content", "")
-            
-            title = metadata.get("doc_title", "Unknown")
-            doc_type = metadata.get("doc_type", "unknown")
-            
-            context_parts.append(f"[Source {i} - {doc_type}: {title}]\n{content}\n")
-        
-        return "\n".join(context_parts)
+        context_parts = [f"[Source {i+1} - {r.get('metadata', {}).get('doc_type', 'unknown')}: {r.get('metadata', {}).get('doc_title', 'Unknown')}]\n{r.get('content', '')}\n" for i, r in enumerate(results)]
+        return "\n".join(context_parts) if context_parts else "No relevant information found."
     
-    def _build_messages(
-        self,
-        message: str,
-        context: str,
-        conversation_history: Optional[List[Dict[str, str]]] = None
-    ) -> List[Dict[str, str]]:
-        """Build messages for LLM."""
+    def _build_messages(self, message: str, context: str, conversation_history: Optional[List[Dict[str, str]]] = None) -> List[Dict[str, str]]:
         system_message = {
             "role": "system",
-            "content": """You are a helpful AI assistant with access to Confluence and Jira data.
-Your role is to answer questions based on the provided context from these sources.
-
-Guidelines:
-- Use the context provided to answer questions accurately
-- If the context doesn't contain enough information, say so
-- Cite sources when possible
-- For Jira-related questions, provide actionable insights
-- Be concise and professional
-- If asked to create or update Jira issues, acknowledge the request and provide clear guidance"""
+            "content": "You are a helpful AI assistant. Use the provided context to answer questions accurately. If the context is insufficient, say so."
         }
-        
         messages = [system_message]
-        
         if conversation_history:
             messages.extend(conversation_history[-5:])
-        
-        user_message = {
-            "role": "user",
-            "content": f"""Context from knowledge base:\n\n{context}\n\nUser question: {message}\n\nPlease answer the question based on the context provided above."""
-        }
-        
-        messages.append(user_message)
-        
+        messages.append({"role": "user", "content": f"Context:\n\n{context}\n\nUser question: {message}"})
         return messages
