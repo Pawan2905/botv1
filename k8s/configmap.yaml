@@ -1,0 +1,44 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bot-config
+data:
+  # Azure OpenAI Configuration
+  AZURE_OPENAI_ENDPOINT: "https://your-openai-resource.openai.azure.com"
+  AZURE_OPENAI_API_KEY: "your-azure-openai-api-key"
+  AZURE_OPENAI_DEPLOYMENT_NAME: "gpt-4"
+  AZURE_OPENAI_API_VERSION: "2024-02-15-preview"
+
+  # Azure Embeddings Configuration
+  AZURE_EMBEDDING_ENDPOINT: "https://your-apim-endpoint.azure-api.net"
+  AZURE_EMBEDDING_KEY: "your-apim-subscription-key"
+  AZURE_EMBEDDING_DEPLOYMENT: "text-embedding-ada-002"
+  AZURE_EMBEDDING_API_VERSION: "2024-02-15-preview"
+  USE_APIM_FOR_EMBEDDINGS: "true"
+
+  # Confluence Configuration
+  CONFLUENCE_URL: "https://your-domain.atlassian.net"
+  CONFLUENCE_USERNAME: "your-email@example.com"
+  CONFLUENCE_API_TOKEN: "your-confluence-api-token"
+  CONFLUENCE_SPACE_KEY: "YOUR_SPACE"
+
+  # Jira Configuration
+  JIRA_URL: "https://your-domain.atlassian.net"
+  JIRA_USERNAME: "your-email@example.com"
+  JIRA_API_TOKEN: "your-jira-api-token"
+  JIRA_PROJECT_KEY: "YOUR_PROJECT"
+
+  # ChromaDB Configuration
+  CHROMA_PERSIST_DIRECTORY: "/app/chroma_db"
+  CHROMA_COLLECTION_NAME: "confluence_jira_docs"
+
+  # Application Configuration
+  CHUNK_SIZE: "1000"
+  CHUNK_OVERLAP: "200"
+  TOP_K_RESULTS: "5"
+  HYBRID_ALPHA: "0.5"
+
+  # Microsoft Teams Adapter Configuration
+  MicrosoftAppId: "your-microsoft-app-id"
+  MicrosoftAppPassword: "your-microsoft-app-password"
+  RagBotApiUrl: "http://rag-api-service" # Use the internal service name

@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-api-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rag-api
+  template:
+    metadata:
+      labels:
+        app: rag-api
+    spec:
+      containers:
+      - name: rag-api
+        image: youracrname.azurecr.io/rag-api:v1
+        ports:
+        - containerPort: 8000
+        envFrom:
+        - configMapRef:
+            name: bot-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rag-api-service
+spec:
+  selector:
+    app: rag-api
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8000
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: teams-adapter-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: teams-adapter
+  template:
+    metadata:
+      labels:
+        app: teams-adapter
+    spec:
+      containers:
+      - name: teams-adapter
+        image: youracrname.azurecr.io/teams-adapter:v1
+        ports:
+        - containerPort: 3978
+        envFrom:
+        - configMapRef:
+            name: bot-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: teams-adapter-service
+spec:
+  selector:
+    app: teams-adapter
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 3978
+  type: LoadBalancer
