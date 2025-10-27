@@ -244,3 +244,116 @@ class ConfluenceFetcher:
         except Exception as e:
             logger.error(f"Error updating page {page_id}: {e}")
             return False
+
+    def get_documents_by_keyword(self, keyword: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Retrieve documents by topic or keyword.
+        
+        Args:
+            keyword: The topic or keyword to search for.
+            limit: Maximum number of results.
+            
+        Returns:
+            List of matching pages.
+        """
+        cql = f'title ~ "{keyword}" OR text ~ "{keyword}"'
+        if self.space_key:
+            cql += f' AND space = "{self.space_key}"'
+        return self.search_pages(cql, limit=limit)
+
+    def get_documents_by_label(self, label: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Retrieve documents by a specific label.
+        
+        Args:
+            label: The label to search for.
+            limit: Maximum number of results.
+            
+        Returns:
+            List of matching pages.
+        """
+        cql = f'label = "{label}"'
+        if self.space_key:
+            cql += f' AND space = "{self.space_key}"'
+        return self.search_pages(cql, limit=limit)
+
+    def get_how_to_guides(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Get step-by-step guides or SOPs.
+        
+        Args:
+            limit: Maximum number of results.
+            
+        Returns:
+            List of matching pages.
+        """
+        return self.get_documents_by_label("how-to", limit=limit)
+
+    def get_policy_info(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Retrieve company policies or processes.
+        
+        Args:
+            limit: Maximum number of results.
+            
+        Returns:
+            List of matching pages.
+        """
+        return self.get_documents_by_label("policy", limit=limit)
+
+    def get_architecture_doc(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Fetch architecture or design documentation.
+        
+        Args:
+            limit: Maximum number of results.
+            
+        Returns:
+            List of matching pages.
+        """
+        return self.get_documents_by_label("architecture", limit=limit)
+
+    def get_team_page(self, team_name: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Access team pages or meeting notes.
+        
+        Args:
+            team_name: The name of the team to search for.
+            limit: Maximum number of results.
+            
+        Returns:
+            List of matching pages.
+        """
+        cql = f'(label = "team" OR label = "meeting-notes") AND title ~ "{team_name}"'
+        if self.space_key:
+            cql += f' AND space = "{self.space_key}"'
+        return self.search_pages(cql, limit=limit)
+
+    def get_onboarding_docs(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Get onboarding or training pages.
+        
+        Args:
+            limit: Maximum number of results.
+            
+        Returns:
+            List of matching pages.
+        """
+        return self.get_documents_by_label("onboarding", limit=limit)
+
+    def get_page_history(self, page_id: str) -> List[Dict[str, Any]]:
+        """
+        Retrieve version/edit history of a page.
+        
+        Args:
+            page_id: The ID of the page.
+            
+        Returns:
+            List of page versions.
+        """
+        try:
+            history = self.confluence.get_page_history(page_id)
+            return history
+        except Exception as e:
+            logger.error(f"Error fetching history for page {page_id}: {e}")
+            return []

@@ -299,6 +299,140 @@ async def update_confluence_page(page_id: str, request: ConfluencePageUpdate):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/confluence/search", tags=["Confluence"])
+async def search_confluence_documents(keyword: str, limit: int = 10):
+    """Retrieve Confluence documents by topic or keyword."""
+    try:
+        pages = bot_service.get_confluence_documents_by_keyword(keyword, limit)
+        return {"keyword": keyword, "results": pages, "total": len(pages)}
+    except Exception as e:
+        logger.error(f"Failed to search Confluence documents: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/confluence/how-to-guides", tags=["Confluence"])
+async def get_confluence_how_to_guides(limit: int = 10):
+    """Get step-by-step guides or SOPs from Confluence."""
+    try:
+        pages = bot_service.get_confluence_how_to_guides(limit)
+        return {"results": pages, "total": len(pages)}
+    except Exception as e:
+        logger.error(f"Failed to get how-to guides: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/confluence/policy-info", tags=["Confluence"])
+async def get_confluence_policy_info(limit: int = 10):
+    """Retrieve company policies or processes from Confluence."""
+    try:
+        pages = bot_service.get_confluence_policy_info(limit)
+        return {"results": pages, "total": len(pages)}
+    except Exception as e:
+        logger.error(f"Failed to get policy info: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/confluence/architecture-docs", tags=["Confluence"])
+async def get_confluence_architecture_docs(limit: int = 10):
+    """Fetch architecture or design documentation from Confluence."""
+    try:
+        pages = bot_service.get_confluence_architecture_docs(limit)
+        return {"results": pages, "total": len(pages)}
+    except Exception as e:
+        logger.error(f"Failed to get architecture docs: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/confluence/team-page", tags=["Confluence"])
+async def get_confluence_team_page(team_name: str, limit: int = 10):
+    """Access team pages or meeting notes from Confluence."""
+    try:
+        pages = bot_service.get_confluence_team_page(team_name, limit)
+        return {"team_name": team_name, "results": pages, "total": len(pages)}
+    except Exception as e:
+        logger.error(f"Failed to get team page: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/confluence/onboarding-docs", tags=["Confluence"])
+async def get_confluence_onboarding_docs(limit: int = 10):
+    """Get onboarding or training pages from Confluence."""
+    try:
+        pages = bot_service.get_confluence_onboarding_docs(limit)
+        return {"results": pages, "total": len(pages)}
+    except Exception as e:
+        logger.error(f"Failed to get onboarding docs: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/confluence/page/{page_id}/history", tags=["Confluence"])
+async def get_confluence_page_history(page_id: str):
+    """Retrieve version/edit history of a Confluence page."""
+    try:
+        history = bot_service.get_confluence_page_history(page_id)
+        return {"page_id": page_id, "history": history}
+    except Exception as e:
+        logger.error(f"Failed to get page history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/cross-system/linked-docs/{issue_key}", tags=["Cross-System"])
+async def get_linked_docs(issue_key: str):
+    """Find Confluence pages linked to a specific Jira ticket."""
+    try:
+        pages = bot_service.link_docs_to_ticket(issue_key)
+        return {"issue_key": issue_key, "linked_pages": pages}
+    except Exception as e:
+        logger.error(f"Failed to get linked documents: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/cross-system/release-summary/{release_name}", tags=["Cross-System"])
+async def get_release_summary(release_name: str):
+    """List Jira issues in a release and link to release notes."""
+    try:
+        summary = bot_service.release_summary(release_name)
+        return {"release_name": release_name, **summary}
+    except Exception as e:
+        logger.error(f"Failed to get release summary: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/cross-system/incident-summary/{incident_key}", tags=["Cross-System"])
+async def get_incident_summary(incident_key: str):
+    """Summarize an incident with corresponding postmortems."""
+    try:
+        summary = bot_service.incident_summary(incident_key)
+        return {"incident_key": incident_key, **summary}
+    except Exception as e:
+        logger.error(f"Failed to get incident summary: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/cross-system/sprint-summary/{sprint_name}", tags=["Cross-System"])
+async def get_sprint_summary(sprint_name: str):
+    """Combine sprint metrics with documentation references."""
+    try:
+        summary = bot_service.sprint_docs_summary(sprint_name)
+        return {"sprint_name": sprint_name, **summary}
+    except Exception as e:
+        logger.error(f"Failed to get sprint summary: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/cross-system/auto-doc", tags=["Cross-System"])
+async def create_auto_doc(project_key: str, doc_type: str, name: str):
+    """Auto-create Confluence release or meeting pages using Jira data."""
+    try:
+        doc = bot_service.auto_doc_creation(project_key, doc_type, name)
+        if not doc:
+            raise HTTPException(status_code=400, detail="Invalid document type or failed to generate document.")
+        return doc
+    except Exception as e:
+        logger.error(f"Failed to auto-create document: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 if __name__ == "__main__":
     uvicorn.run(
         "api.main:app",

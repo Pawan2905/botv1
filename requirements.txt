@@ -36,3 +36,8 @@ pandas==2.2.0
 
 # Optional: For better tokenization
 nltk==3.8.1
+
+# Microsoft Teams Adapter
+aiohttp==3.9.3
+botbuilder-core==4.17.2
+botbuilder-schema==4.17.2

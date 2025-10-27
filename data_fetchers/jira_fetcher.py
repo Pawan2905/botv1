@@ -263,6 +263,9 @@ class JiraFetcher:
             
             content = "\n\n".join(content_parts)
             
+            # Get linked Confluence pages
+            linked_pages = self.get_issue_links(issue.key)
+
             return {
                 "id": issue.id,
                 "key": issue.key,
@@ -280,6 +283,7 @@ class JiraFetcher:
                 "updated": fields.updated,
                 "labels": fields.labels or [],
                 "components": [c.name for c in fields.components] if fields.components else [],
+                "linked_pages": linked_pages,
                 "type": "jira",
                 "source": "jira"
             }
@@ -300,3 +304,75 @@ class JiraFetcher:
         """
         jql = f'text ~ "{query}" ORDER BY updated DESC'
         return self.fetch_all_issues(jql=jql, max_results=max_results)
+
+    def get_sprint_by_name(self, sprint_name: str) -> Optional[Dict[str, Any]]:
+        """
+        Get sprint details by name.
+        
+        Args:
+            sprint_name: The name of the sprint.
+            
+        Returns:
+            Sprint details dictionary.
+        """
+        try:
+            boards = self.jira.boards()
+            for board in boards:
+                sprints = self.jira.sprints(board.id)
+                for sprint in sprints:
+                    if sprint.name == sprint_name:
+                        return {
+                            "id": sprint.id,
+                            "name": sprint.name,
+                            "startDate": sprint.startDate,
+                            "endDate": sprint.endDate,
+                            "state": sprint.state,
+                        }
+            return None
+        except Exception as e:
+            logger.error(f"Error fetching sprint '{sprint_name}': {e}")
+            return None
+
+    def get_issues_for_sprint(self, sprint_id: int) -> List[Dict[str, Any]]:
+        """
+        Get all issues for a given sprint.
+        
+        Args:
+            sprint_id: The ID of the sprint.
+            
+        Returns:
+            List of issues in the sprint.
+        """
+        try:
+            issues = self.jira.search_issues(f'sprint = {sprint_id}')
+            return [self._process_issue(issue) for issue in issues]
+        except Exception as e:
+            logger.error(f"Error fetching issues for sprint {sprint_id}: {e}")
+            return []
+
+    def get_issue_links(self, issue_key: str) -> List[Dict[str, Any]]:
+        """
+        Get all remote links for a given issue.
+        
+        Args:
+            issue_key: The key of the issue.
+            
+        Returns:
+            List of remote links.
+        """
+        try:
+            issue = self.jira.issue(issue_key)
+            remote_links = self.jira.remote_links(issue)
+            
+            links = []
+            for link in remote_links:
+                if 'confluence' in link.object.url:
+                    links.append({
+                        "id": link.id,
+                        "url": link.object.url,
+                        "title": link.object.title,
+                    })
+            return links
+        except Exception as e:
+            logger.error(f"Error fetching links for issue {issue_key}: {e}")
+            return []

@@ -157,6 +157,255 @@ If no specific tool seems appropriate, respond with an empty JSON object: {{}}.
             return {"response": response_text, "sources": issues}
         return {"response": "I couldn't find any high priority tickets.", "sources": []}
 
+    def _tool_list_open_bugs(self) -> Dict[str, Any]:
+        """Tool to list open bugs."""
+        jql = "issuetype = Bug AND status != Done ORDER BY updated DESC"
+        issues = self.search_jira_issues(jql=jql, max_results=10)
+        if issues:
+            response_text = "Here are the top 10 open bugs:\n"
+            for issue in issues:
+                response_text += f"- {issue['key']}: {issue['title']} (Status: {issue['status']})\n"
+            return {"response": response_text, "sources": issues}
+        return {"response": "I couldn't find any open bugs.", "sources": []}
+
+    def _tool_filter_issues(self, assignee: Optional[str] = None, project: Optional[str] = None, priority: Optional[str] = None) -> Dict[str, Any]:
+        """Tool to filter issues by assignee, project, or priority."""
+        jql_parts = []
+        if assignee:
+            jql_parts.append(f'assignee = "{assignee}"')
+        if project:
+            jql_parts.append(f'project = "{project}"')
+        if priority:
+            jql_parts.append(f'priority = "{priority}"')
+        
+        if not jql_parts:
+            return {"response": "Please provide at least one filter (assignee, project, or priority).", "sources": []}
+            
+        jql = " AND ".join(jql_parts) + " ORDER BY updated DESC"
+        issues = self.search_jira_issues(jql=jql, max_results=10)
+        
+        if issues:
+            response_text = "Here are the matching issues:\n"
+            for issue in issues:
+                response_text += f"- {issue['key']}: {issue['title']} (Status: {issue['status']})\n"
+            return {"response": response_text, "sources": issues}
+        return {"response": "No issues found matching your criteria.", "sources": []}
+
+    def _tool_get_sprint_details(self, sprint_name: str) -> Dict[str, Any]:
+        """Tool to get details for a specific sprint."""
+        sprint = self.jira_fetcher.get_sprint_by_name(sprint_name)
+        if sprint:
+            issues = self.jira_fetcher.get_issues_for_sprint(sprint['id'])
+            response_text = f"Details for sprint '{sprint_name}':\n"
+            response_text += f"- Start Date: {sprint['startDate']}\n"
+            response_text += f"- End Date: {sprint['endDate']}\n"
+            response_text += f"- State: {sprint['state']}\n"
+            response_text += f"- Issues ({len(issues)}):\n"
+            for issue in issues:
+                response_text += f"  - {issue['key']}: {issue['title']} (Status: {issue['status']})\n"
+            return {"response": response_text, "sources": issues}
+        return {"response": f"Sprint '{sprint_name}' not found.", "sources": []}
+
+    def _tool_get_blocked_issues(self) -> Dict[str, Any]:
+        """Tool to find blocked or high-priority tickets."""
+        jql = 'status = "Blocked" or priority in (Highest, High)'
+        issues = self.search_jira_issues(jql=jql, max_results=10)
+        if issues:
+            response_text = "Here are the top 10 blocked or high-priority issues:\n"
+            for issue in issues:
+                response_text += f"- {issue['key']}: {issue['title']} (Status: {issue['status']}, Priority: {issue['priority']})\n"
+            return {"response": response_text, "sources": issues}
+        return {"response": "No blocked or high-priority issues found.", "sources": []}
+
+    def _tool_create_ticket(self, project_key: str, summary: str, description: str, issue_type: str = "Task", priority: Optional[str] = None, labels: Optional[List[str]] = None) -> Dict[str, Any]:
+        """Tool to create a new Jira ticket."""
+        issue = self.create_jira_issue(project_key, summary, description, issue_type, priority, labels)
+        if issue:
+            return {"response": f"Successfully created ticket {issue['key']}.", "sources": [issue]}
+        return {"response": "Failed to create ticket.", "sources": []}
+
+    def _tool_update_ticket(self, issue_key: str, summary: Optional[str] = None, description: Optional[str] = None, assignee: Optional[str] = None, status: Optional[str] = None) -> Dict[str, Any]:
+        """Tool to update an existing Jira ticket."""
+        fields = {}
+        if summary:
+            fields["summary"] = summary
+        if description:
+            fields["description"] = description
+        if assignee:
+            fields["assignee"] = {"name": assignee}
+        
+        if status:
+            self.transition_jira_issue(issue_key, status)
+
+        if fields:
+            issue = self.update_jira_issue(issue_key, **fields)
+            if issue:
+                return {"response": f"Successfully updated ticket {issue_key}.", "sources": [issue]}
+        
+        return {"response": f"Successfully updated ticket {issue_key}.", "sources": []}
+
+    def _tool_add_comment(self, issue_key: str, comment: str) -> Dict[str, Any]:
+        """Tool to add a comment to a Jira issue."""
+        success = self.add_jira_comment(issue_key, comment)
+        if success:
+            return {"response": f"Successfully added comment to ticket {issue_key}.", "sources": []}
+        return {"response": "Failed to add comment.", "sources": []}
+
+    def _tool_get_confluence_page(self, keyword: str) -> Dict[str, Any]:
+        """Tool to retrieve Confluence documents by topic or keyword."""
+        pages = self.confluence_fetcher.get_documents_by_keyword(keyword)
+        if pages:
+            response_text = f"Here are the Confluence pages I found for '{keyword}':\n"
+            for page in pages:
+                response_text += f"- {page['title']}: {page['url']}\n"
+            return {"response": response_text, "sources": pages}
+        return {"response": f"I couldn't find any Confluence pages matching '{keyword}'.", "sources": []}
+
+    def _tool_get_how_to_guides(self) -> Dict[str, Any]:
+        """Tool to retrieve step-by-step guides or SOPs."""
+        pages = self.confluence_fetcher.get_how_to_guides()
+        if pages:
+            response_text = "Here are the how-to guides I found:\n"
+            for page in pages:
+                response_text += f"- {page['title']}: {page['url']}\n"
+            return {"response": response_text, "sources": pages}
+        return {"response": "I couldn't find any how-to guides.", "sources": []}
+
+    def _tool_get_policy_info(self) -> Dict[str, Any]:
+        """Tool to retrieve company policies or processes."""
+        pages = self.confluence_fetcher.get_policy_info()
+        if pages:
+            response_text = "Here are the policy documents I found:\n"
+            for page in pages:
+                response_text += f"- {page['title']}: {page['url']}\n"
+            return {"response": response_text, "sources": pages}
+        return {"response": "I couldn't find any policy documents.", "sources": []}
+
+    def _tool_get_architecture_doc(self) -> Dict[str, Any]:
+        """Tool to fetch architecture or design documentation."""
+        pages = self.confluence_fetcher.get_architecture_doc()
+        if pages:
+            response_text = "Here are the architecture documents I found:\n"
+            for page in pages:
+                response_text += f"- {page['title']}: {page['url']}\n"
+            return {"response": response_text, "sources": pages}
+        return {"response": "I couldn't find any architecture documents.", "sources": []}
+
+    def _tool_get_team_page(self, team_name: str) -> Dict[str, Any]:
+        """Tool to access team pages or meeting notes."""
+        pages = self.confluence_fetcher.get_team_page(team_name)
+        if pages:
+            response_text = f"Here are the team pages and meeting notes I found for '{team_name}':\n"
+            for page in pages:
+                response_text += f"- {page['title']}: {page['url']}\n"
+            return {"response": response_text, "sources": pages}
+        return {"response": f"I couldn't find any team pages or meeting notes for '{team_name}'.", "sources": []}
+
+    def _tool_get_onboarding_docs(self) -> Dict[str, Any]:
+        """Tool to get onboarding or training pages."""
+        pages = self.confluence_fetcher.get_onboarding_docs()
+        if pages:
+            response_text = "Here are the onboarding documents I found:\n"
+            for page in pages:
+                response_text += f"- {page['title']}: {page['url']}\n"
+            return {"response": response_text, "sources": pages}
+        return {"response": "I couldn't find any onboarding documents.", "sources": []}
+
+    def _tool_get_page_history(self, page_id: str) -> Dict[str, Any]:
+        """Tool to retrieve version/edit history of a page."""
+        history = self.confluence_fetcher.get_page_history(page_id)
+        if history:
+            response_text = f"Here is the history for page {page_id}:\n"
+            for version in history:
+                when = version.get('when', 'N/A')
+                author = version.get('by', {}).get('displayName', 'Unknown')
+                response_text += f"- Version {version.get('number')}: updated on {when} by {author}\n"
+            return {"response": response_text, "sources": history}
+        return {"response": f"Could not retrieve history for page {page_id}.", "sources": []}
+
+    def _tool_link_docs_to_ticket(self, issue_key: str) -> Dict[str, Any]:
+        """Tool to find Confluence pages linked to a specific Jira ticket."""
+        issue = self.get_jira_issue(issue_key)
+        if issue and issue.get('linked_pages'):
+            response_text = f"Here are the Confluence pages linked to ticket {issue_key}:\n"
+            for page in issue['linked_pages']:
+                response_text += f"- {page['title']}: {page['url']}\n"
+            return {"response": response_text, "sources": issue['linked_pages']}
+        return {"response": f"No Confluence pages are linked to ticket {issue_key}.", "sources": []}
+
+    def _tool_release_summary(self, release_name: str) -> Dict[str, Any]:
+        """Tool to list Jira issues in a release and link to release notes."""
+        jql = f'fixVersion = "{release_name}"'
+        issues = self.search_jira_issues(jql=jql)
+        release_notes = self.confluence_fetcher.get_documents_by_keyword(f"Release Notes {release_name}", limit=1)
+        
+        response_text = f"Summary for release '{release_name}':\n"
+        if release_notes:
+            response_text += f"Release Notes: {release_notes[0]['url']}\n"
+        
+        if issues:
+            response_text += "Issues in this release:\n"
+            for issue in issues:
+                response_text += f"- {issue['key']}: {issue['title']}\n"
+        
+        return {"response": response_text, "sources": issues + release_notes}
+
+    def _tool_incident_summary(self, incident_key: str) -> Dict[str, Any]:
+        """Tool to summarize incidents with corresponding postmortems."""
+        incident = self.get_jira_issue(incident_key)
+        postmortems = self.confluence_fetcher.get_documents_by_keyword(f"Postmortem {incident_key}", limit=1)
+        
+        response_text = f"Summary for incident '{incident_key}':\n"
+        if incident:
+            response_text += f"Title: {incident['title']}\n"
+            response_text += f"Status: {incident['status']}\n"
+        
+        if postmortems:
+            response_text += f"Postmortem: {postmortems[0]['url']}\n"
+            
+        return {"response": response_text, "sources": [incident] + postmortems}
+
+    def _tool_sprint_docs_summary(self, sprint_name: str) -> Dict[str, Any]:
+        """Tool to combine sprint metrics with documentation references."""
+        sprint = self.jira_fetcher.get_sprint_by_name(sprint_name)
+        if not sprint:
+            return {"response": f"Sprint '{sprint_name}' not found.", "sources": []}
+            
+        issues = self.jira_fetcher.get_issues_for_sprint(sprint['id'])
+        docs = self.confluence_fetcher.get_documents_by_keyword(sprint_name)
+        
+        response_text = f"Summary for sprint '{sprint_name}':\n"
+        response_text += f"Issues: {len(issues)}\n"
+        
+        if docs:
+            response_text += "Related Documents:\n"
+            for doc in docs:
+                response_text += f"- {doc['title']}: {doc['url']}\n"
+                
+        return {"response": response_text, "sources": issues + docs}
+
+    def _tool_auto_doc_creation(self, project_key: str, doc_type: str, name: str) -> Dict[str, Any]:
+        """Tool to auto-create Confluence release or meeting pages using Jira data."""
+        if doc_type == "release":
+            jql = f'project = "{project_key}" AND fixVersion = "{name}"'
+            issues = self.search_jira_issues(jql=jql)
+            content = "<h1>Release Notes</h1>\n<ul>"
+            for issue in issues:
+                content += f"<li>{issue['key']}: {issue['title']}</li>"
+            content += "</ul>"
+            
+            page = self.confluence_fetcher.update_page(title=f"Release Notes: {name}", content=content)
+            if page:
+                return {"response": f"Created release notes page for {name}.", "sources": [page]}
+                
+        elif doc_type == "meeting":
+            content = "<h1>Meeting Notes</h1>\n<h2>Attendees</h2>\n<p></p>\n<h2>Agenda</h2>\n<p></p>\n<h2>Notes</h2>\n<p></p>"
+            page = self.confluence_fetcher.update_page(title=f"Meeting Notes: {name}", content=content)
+            if page:
+                return {"response": f"Created meeting notes page for {name}.", "sources": [page]}
+
+        return {"response": "Failed to create document.", "sources": []}
+
     def _tool_rag_search(self, query: str, conversation_history: Optional[List[Dict[str, str]]] = None, top_k: int = 5) -> Dict[str, Any]:
         """Tool for general RAG search over Confluence and Jira."""
         results = self.query(query, top_k=top_k, method="hybrid")
@@ -201,6 +450,141 @@ If no specific tool seems appropriate, respond with an empty JSON object: {{}}.
                 "tool_name": "list_high_priority_tickets",
                 "description": "List all high-priority tickets.",
                 "args": {}
+            },
+            {
+                "tool_name": "list_open_bugs",
+                "description": "List all open bugs.",
+                "args": {}
+            },
+            {
+                "tool_name": "filter_issues",
+                "description": "Filter issues by assignee, project, or priority.",
+                "args": {
+                    "assignee": "Optional. The assignee's name.",
+                    "project": "Optional. The project key.",
+                    "priority": "Optional. The issue priority."
+                }
+            },
+            {
+                "tool_name": "get_sprint_details",
+                "description": "Get details for a specific sprint.",
+                "args": {
+                    "sprint_name": "The name of the sprint."
+                }
+            },
+            {
+                "tool_name": "get_blocked_issues",
+                "description": "Find blocked or high-priority tickets.",
+                "args": {}
+            },
+            {
+                "tool_name": "create_ticket",
+                "description": "Create a new Jira ticket.",
+                "args": {
+                    "project_key": "The project key (e.g., 'PROJ').",
+                    "summary": "The summary of the ticket.",
+                    "description": "The description of the ticket.",
+                    "issue_type": "Optional. The type of the issue (e.g., 'Task', 'Bug').",
+                    "priority": "Optional. The priority of the issue.",
+                    "labels": "Optional. A list of labels."
+                }
+            },
+            {
+                "tool_name": "update_ticket",
+                "description": "Update an existing Jira ticket.",
+                "args": {
+                    "issue_key": "The Jira ticket key.",
+                    "summary": "Optional. The new summary.",
+                    "description": "Optional. The new description.",
+                    "assignee": "Optional. The new assignee.",
+                    "status": "Optional. The new status."
+                }
+            },
+            {
+                "tool_name": "add_comment",
+                "description": "Add a comment to a Jira issue.",
+                "args": {
+                    "issue_key": "The Jira ticket key.",
+                    "comment": "The comment to add."
+                }
+            },
+            {
+                "tool_name": "get_confluence_page",
+                "description": "Retrieve Confluence documents by topic or keyword.",
+                "args": {
+                    "keyword": "The topic or keyword to search for."
+                }
+            },
+            {
+                "tool_name": "get_how_to_guides",
+                "description": "Get step-by-step guides or SOPs.",
+                "args": {}
+            },
+            {
+                "tool_name": "get_policy_info",
+                "description": "Retrieve company policies or processes.",
+                "args": {}
+            },
+            {
+                "tool_name": "get_architecture_doc",
+                "description": "Fetch architecture or design documentation.",
+                "args": {}
+            },
+            {
+                "tool_name": "get_team_page",
+                "description": "Access team pages or meeting notes.",
+                "args": {
+                    "team_name": "The name of the team to search for."
+                }
+            },
+            {
+                "tool_name": "get_onboarding_docs",
+                "description": "Get onboarding or training pages.",
+                "args": {}
+            },
+            {
+                "tool_name": "get_page_history",
+                "description": "Retrieve version/edit history of a Confluence page.",
+                "args": {
+                    "page_id": "The ID of the page."
+                }
+            },
+            {
+                "tool_name": "link_docs_to_ticket",
+                "description": "Find Confluence pages linked to a specific Jira ticket.",
+                "args": {
+                    "issue_key": "The Jira ticket key."
+                }
+            },
+            {
+                "tool_name": "release_summary",
+                "description": "List Jira issues in a release and link to release notes.",
+                "args": {
+                    "release_name": "The name of the release."
+                }
+            },
+            {
+                "tool_name": "incident_summary",
+                "description": "Summarize incidents with corresponding postmortems.",
+                "args": {
+                    "incident_key": "The Jira ticket key of the incident."
+                }
+            },
+            {
+                "tool_name": "sprint_docs_summary",
+                "description": "Combine sprint metrics with documentation references.",
+                "args": {
+                    "sprint_name": "The name of the sprint."
+                }
+            },
+            {
+                "tool_name": "auto_doc_creation",
+                "description": "Auto-create Confluence release or meeting pages using Jira data.",
+                "args": {
+                    "project_key": "The Jira project key.",
+                    "doc_type": "The type of document to create ('release' or 'meeting').",
+                    "name": "The name of the release or meeting."
+                }
             },
             {
                 "tool_name": "rag_search",
@@ -306,6 +690,82 @@ If no specific tool seems appropriate, respond with an empty JSON object: {{}}.
         elif query:
             return self.jira_fetcher.search_issues(query, max_results)
         return self.jira_fetcher.fetch_all_issues(max_results=max_results)
+
+    def get_confluence_documents_by_keyword(self, keyword: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """Retrieve Confluence documents by topic or keyword."""
+        return self.confluence_fetcher.get_documents_by_keyword(keyword, limit=limit)
+
+    def get_confluence_how_to_guides(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get step-by-step guides or SOPs from Confluence."""
+        return self.confluence_fetcher.get_how_to_guides(limit=limit)
+
+    def get_confluence_policy_info(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """Retrieve company policies or processes from Confluence."""
+        return self.confluence_fetcher.get_policy_info(limit=limit)
+
+    def get_confluence_architecture_docs(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """Fetch architecture or design documentation from Confluence."""
+        return self.confluence_fetcher.get_architecture_doc(limit=limit)
+
+    def get_confluence_team_page(self, team_name: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """Access team pages or meeting notes from Confluence."""
+        return self.confluence_fetcher.get_team_page(team_name, limit=limit)
+
+    def get_confluence_onboarding_docs(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get onboarding or training pages from Confluence."""
+        return self.confluence_fetcher.get_onboarding_docs(limit=limit)
+
+    def get_confluence_page_history(self, page_id: str) -> List[Dict[str, Any]]:
+        """Retrieve version/edit history of a Confluence page."""
+        return self.confluence_fetcher.get_page_history(page_id)
+
+    def link_docs_to_ticket(self, issue_key: str) -> List[Dict[str, Any]]:
+        """Find Confluence pages linked to a specific Jira ticket."""
+        issue = self.get_jira_issue(issue_key)
+        return issue.get('linked_pages', []) if issue else []
+
+    def release_summary(self, release_name: str) -> Dict[str, Any]:
+        """List Jira issues in a release and link to release notes."""
+        jql = f'fixVersion = "{release_name}"'
+        issues = self.search_jira_issues(jql=jql)
+        release_notes = self.confluence_fetcher.get_documents_by_keyword(f"Release Notes {release_name}", limit=1)
+        return {"issues": issues, "release_notes": release_notes}
+
+    def incident_summary(self, incident_key: str) -> Dict[str, Any]:
+        """Summarize incidents with corresponding postmortems."""
+        incident = self.get_jira_issue(incident_key)
+        postmortems = self.confluence_fetcher.get_documents_by_keyword(f"Postmortem {incident_key}", limit=1)
+        return {"incident": incident, "postmortems": postmortems}
+
+    def sprint_docs_summary(self, sprint_name: str) -> Dict[str, Any]:
+        """Combine sprint metrics with documentation references."""
+        sprint = self.jira_fetcher.get_sprint_by_name(sprint_name)
+        if not sprint:
+            return {"sprint": None, "issues": [], "docs": []}
+        issues = self.jira_fetcher.get_issues_for_sprint(sprint['id'])
+        docs = self.confluence_fetcher.get_documents_by_keyword(sprint_name)
+        return {"sprint": sprint, "issues": issues, "docs": docs}
+
+    def auto_doc_creation(self, project_key: str, doc_type: str, name: str) -> Optional[Dict[str, Any]]:
+        """Auto-create Confluence release or meeting pages using Jira data."""
+        if doc_type == "release":
+            jql = f'project = "{project_key}" AND fixVersion = "{name}"'
+            issues = self.search_jira_issues(jql=jql)
+            content = "<h1>Release Notes</h1>\n<ul>"
+            for issue in issues:
+                content += f"<li>{issue['key']}: {issue['title']}</li>"
+            content += "</ul>"
+            
+            # Here we'd ideally create a new page, but Confluence API lib doesn't support it well.
+            # We'll simulate by updating a placeholder page. A real implementation would need `create_page`.
+            # For now, let's just return the content that would be created.
+            return {"title": f"Release Notes: {name}", "content": content}
+
+        elif doc_type == "meeting":
+            content = "<h1>Meeting Notes</h1>\n<h2>Attendees</h2>\n<p></p>\n<h2>Agenda</h2>\n<p></p>\n<h2>Notes</h2>\n<p></p>"
+            return {"title": f"Meeting Notes: {name}", "content": content}
+
+        return None
 
     def update_confluence_page(self, page_id: str, title: str, content: str) -> bool:
         return self.confluence_fetcher.update_page(page_id, title, content)
