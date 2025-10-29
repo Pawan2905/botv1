@@ -42,7 +42,7 @@ class ConfluenceFetcher:
     
     def fetch_all_pages(self, limit: int = 100) -> List[Dict[str, Any]]:
         """
-        Fetch all pages from Confluence.
+        Fetch all pages from Confluence. If no space_key is provided, it fetches pages from all available spaces.
         
         Args:
             limit: Maximum number of pages to fetch per request
@@ -54,47 +54,69 @@ class ConfluenceFetcher:
         start = 0
         
         try:
-            while True:
-                if self.required_label:
-                    cql = f'label = "{self.required_label}"'
-                    if self.space_key:
-                        cql += f' AND space = "{self.space_key}"'
+            if self.required_label or self.space_key:
+                while True:
+                    response = []
+                    if self.required_label:
+                        cql = f'label = "{self.required_label}"'
+                        if self.space_key:
+                            cql += f' AND space = "{self.space_key}"'
+                        
+                        search_results = self.confluence.cql(cql, start=start, limit=limit, expand="body.storage,version,metadata.labels")
+                        response = [item['content'] for item in search_results.get('results', []) if item.get('content')]
+
+                    elif self.space_key:
+                        response = self.confluence.get_all_pages_from_space(
+                            space=self.space_key,
+                            start=start,
+                            limit=limit,
+                            expand="body.storage,version,metadata.labels"
+                        )
                     
-                    # Paginate through CQL results to fetch all matching pages.
-                    search_results = self.confluence.cql(cql, start=start, limit=limit, expand="body.storage,version,metadata.labels")
-                    response = [item['content'] for item in search_results.get('results', []) if item.get('content')]
+                    if not response:
+                        break
+                    
+                    for page in response:
+                        processed_page = self._process_page(page)
+                        if processed_page:
+                            pages.append(processed_page)
+                            logger.info(f"Fetched page: {processed_page['title']}")
+                    
+                    if len(response) < limit:
+                        break
+                    
+                    start += limit
+            else:
+                logger.info("No space key or label specified. Fetching pages from all available spaces.")
+                all_spaces_response = self.confluence.get_all_spaces(start=0, limit=50, expand='description.plain,homepage')
+                all_spaces = all_spaces_response.get('results', [])
+                
+                for space in all_spaces:
+                    space_key = space['key']
+                    logger.info(f"Fetching pages from space: {space_key}")
+                    
+                    space_start = 0
+                    while True:
+                        space_pages = self.confluence.get_all_pages_from_space(
+                            space=space_key,
+                            start=space_start,
+                            limit=limit,
+                            expand="body.storage,version,metadata.labels"
+                        )
+                        if not space_pages:
+                            break
+                        
+                        for page in space_pages:
+                            processed_page = self._process_page(page)
+                            if processed_page:
+                                pages.append(processed_page)
+                                logger.info(f"Fetched page: {processed_page['title']}")
+                        
+                        if len(space_pages) < limit:
+                            break
+                        
+                        space_start += limit
 
-                elif self.space_key:
-                    response = self.confluence.get_all_pages_from_space(
-                        space=self.space_key,
-                        start=start,
-                        limit=limit,
-                        expand="body.storage,version,metadata.labels"
-                    )
-                else:
-                    # Default to fetching all pages if no space or label is specified
-                    # Note: This can be very slow on large Confluence instances.
-                    response = self.confluence.get_all_pages(
-                        start=start,
-                        limit=limit,
-                        expand="body.storage,version,metadata.labels"
-                    )
-
-                if not response:
-                    break
-                
-                for page in response:
-                    processed_page = self._process_page(page)
-                    if processed_page:
-                        pages.append(processed_page)
-                        logger.info(f"Fetched page: {processed_page['title']}")
-                
-                # Check if there are more pages
-                if len(response) < limit:
-                    break
-                
-                start += limit
-            
             logger.info(f"Successfully fetched {len(pages)} pages from Confluence")
             return pages
             
