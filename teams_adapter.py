@@ -113,7 +113,10 @@ app.router.add_post("/api/messages", messages)
 
 if __name__ == "__main__":
     try:
-        print("Teams Adapter is running on http://localhost:3978")
-        web.run_app(app, host="localhost", port=3978)
+        # Get host and port from environment variables for App Service compatibility
+        host = os.environ.get("HOST", "localhost")
+        port = int(os.environ.get("PORT", 3978))
+        print(f"Teams Adapter is running on http://{host}:{port}")
+        web.run_app(app, host=host, port=port)
     except Exception as error:
         raise error

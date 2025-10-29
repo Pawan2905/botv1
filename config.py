@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     confluence_username: str = Field(..., env="CONFLUENCE_USERNAME")
     confluence_api_token: str = Field(..., env="CONFLUENCE_API_TOKEN")
     confluence_space_key: Optional[str] = Field(default=None, env="CONFLUENCE_SPACE_KEY")  # If None, fetches from all spaces
+    confluence_required_label: Optional[str] = Field(default=None, env="CONFLUENCE_REQUIRED_LABEL") # If set, only fetches pages with this label
     
     # Jira Configuration
     jira_url: str = Field(..., env="JIRA_URL")

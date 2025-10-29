@@ -46,7 +46,8 @@ class BotService:
             url=settings.confluence_url,
             username=settings.confluence_username,
             api_token=settings.confluence_api_token,
-            space_key=settings.confluence_space_key
+            space_key=settings.confluence_space_key,
+            required_label=settings.confluence_required_label
         )
         self.jira_fetcher = JiraFetcher(
             url=settings.jira_url,

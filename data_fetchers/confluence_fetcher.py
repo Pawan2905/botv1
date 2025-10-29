@@ -17,7 +17,8 @@ class ConfluenceFetcher:
         url: str,
         username: str,
         api_token: str,
-        space_key: Optional[str] = None
+        space_key: Optional[str] = None,
+        required_label: Optional[str] = None
     ):
         """
         Initialize Confluence fetcher.
@@ -27,6 +28,7 @@ class ConfluenceFetcher:
             username: Confluence username/email
             api_token: Confluence API token
             space_key: Optional space key to filter pages
+            required_label: Optional label to filter pages
         """
         self.confluence = Confluence(
             url=url,
@@ -35,6 +37,7 @@ class ConfluenceFetcher:
             cloud=True
         )
         self.space_key = space_key
+        self.required_label = required_label
         logger.info(f"Initialized Confluence fetcher for {url}")
     
     def fetch_all_pages(self, limit: int = 100) -> List[Dict[str, Any]]:
@@ -52,7 +55,16 @@ class ConfluenceFetcher:
         
         try:
             while True:
-                if self.space_key:
+                if self.required_label:
+                    cql = f'label = "{self.required_label}"'
+                    if self.space_key:
+                        cql += f' AND space = "{self.space_key}"'
+                    
+                    # Paginate through CQL results to fetch all matching pages.
+                    search_results = self.confluence.cql(cql, start=start, limit=limit, expand="body.storage,version,metadata.labels")
+                    response = [item['content'] for item in search_results.get('results', []) if item.get('content')]
+
+                elif self.space_key:
                     response = self.confluence.get_all_pages_from_space(
                         space=self.space_key,
                         start=start,
@@ -60,12 +72,14 @@ class ConfluenceFetcher:
                         expand="body.storage,version,metadata.labels"
                     )
                 else:
-                    response = self.confluence.get_all_pages_by_label(
+                    # Default to fetching all pages if no space or label is specified
+                    # Note: This can be very slow on large Confluence instances.
+                    response = self.confluence.get_all_pages(
                         start=start,
                         limit=limit,
                         expand="body.storage,version,metadata.labels"
                     )
-                
+
                 if not response:
                     break
                 
@@ -120,16 +134,20 @@ class ConfluenceFetcher:
             List of matching pages
         """
         try:
-            results = self.confluence.cql(cql=cql, limit=limit)
+            results = self.confluence.cql(
+                cql=cql, 
+                limit=limit,
+                expand="body.storage,version,metadata.labels"
+            )
             pages = []
             
             for result in results.get("results", []):
-                page_id = result.get("content", {}).get("id")
-                if page_id:
-                    page = self.fetch_page_by_id(page_id)
-                    if page:
-                        pages.append(page)
-            
+                page_data = result.get("content")
+                if page_data:
+                    processed_page = self._process_page(page_data)
+                    if processed_page:
+                        pages.append(processed_page)
+
             logger.info(f"Found {len(pages)} pages matching CQL query")
             return pages
             
