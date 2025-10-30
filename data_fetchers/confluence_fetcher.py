@@ -215,7 +215,7 @@ class ConfluenceFetcher:
         
         Args:
             page: Raw page data from Confluence API
-            
+             
         Returns:
             Processed page dictionary
         """
