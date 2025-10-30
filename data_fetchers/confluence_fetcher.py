@@ -61,11 +61,18 @@ class ConfluenceFetcher:
                 if self.space_key:
                     cql += f' AND space = "{self.space_key}"'
                 
+                logger.info(f"Fetching pages using CQL: {cql}")
+                
                 while True:
                     search_results = self.confluence.cql(cql, start=start, limit=limit, expand="body.storage,version,metadata.labels")
-                    response = [item['content'] for item in search_results.get('results', []) if item.get('content')]
+                    
+                    results_list = search_results.get('results', [])
+                    logger.info(f"CQL query returned {len(results_list)} results in this batch.")
+                    
+                    response = [item['content'] for item in results_list if item.get('content')]
 
                     if not response:
+                        logger.info("No more pages to fetch in this batch or no results found.")
                         break
                     
                     for page in response:
