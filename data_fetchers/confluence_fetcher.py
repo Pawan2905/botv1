@@ -39,122 +39,121 @@ class ConfluenceFetcher:
         self.space_key = space_key
         self.required_label = required_label
         logger.info(f"Initialized Confluence fetcher for {url}")
-    
-    def fetch_all_pages(self, limit: int = 100) -> List[Dict[str, Any]]:
+
+    def get_all_spaces(self, limit: int = 50) -> List[Dict[str, Any]]:
         """
-        Fetch all pages from Confluence. If no space_key is provided, it fetches pages from all available spaces.
+        Fetch all spaces from Confluence.
         
         Args:
-            limit: Maximum number of pages to fetch per request
+            limit: Maximum number of spaces to fetch per request.
+        
+        Returns:
+            List of space dictionaries.
+        """
+        all_spaces = []
+        start = 0
+        while True:
+            try:
+                spaces_batch = self.confluence.get_all_spaces(
+                    start=start, 
+                    limit=limit, 
+                    expand='description.plain,homepage'
+                )
+                results = spaces_batch.get('results', [])
+                if not results:
+                    break
+                all_spaces.extend(results)
+                start += len(results)
+                if len(results) < limit:
+                    break
+            except Exception as e:
+                logger.error(f"Error fetching spaces from Confluence: {e}")
+                break
+        logger.info(f"Found {len(all_spaces)} spaces.")
+        return all_spaces
+
+    def fetch_pages_from_space(self, space_key: str, limit: int = 100) -> List[Dict[str, Any]]:
+        """
+        Fetch all pages from a specific Confluence space.
+        
+        Args:
+            space_key: The key of the space to fetch pages from.
+            limit: Maximum number of pages to fetch per request.
             
         Returns:
-            List of page dictionaries with content and metadata
+            List of page dictionaries with content and metadata.
         """
         pages = []
         start = 0
+        logger.info(f"Fetching pages from space: {space_key}")
+        while True:
+            try:
+                response = self.confluence.get_all_pages_from_space(
+                    space=space_key,
+                    start=start,
+                    limit=limit,
+                    expand="body.storage,version,metadata.labels"
+                )
+                if not response:
+                    break
+                
+                for page in response:
+                    processed_page = self._process_page(page)
+                    if processed_page:
+                        pages.append(processed_page)
+                
+                if len(response) < limit:
+                    break
+                start += limit
+            except Exception as e:
+                logger.error(f"Error fetching pages from space {space_key}: {e}")
+                break
+        logger.info(f"Fetched {len(pages)} pages from space {space_key}.")
+        return pages
+
+    def fetch_all_pages_from_all_spaces(self, page_limit_per_space: int = 100) -> List[Dict[str, Any]]:
+        """
+        Fetch all pages from all available spaces in Confluence.
         
-        try:
-            if self.required_label:
-                # If a label is specified, always use CQL to fetch pages.
-                # This will search across all spaces if space_key is not provided.
-                cql = f'label = "{self.required_label}"'
-                if self.space_key:
-                    cql += f' AND space = "{self.space_key}"'
-                
-                logger.info(f"Fetching pages using CQL: {cql}")
-                
-                while True:
-                    # CQL endpoint returns results wrapped in a "content" object.
-                    # The expand must target the wrapped content fields.
-                    search_results = self.confluence.cql(
-                        cql,
-                        start=start,
-                        limit=limit,
-                        expand="content.body.storage,content.version,content.metadata.labels"
-                    )
-                    
-                    results_list = search_results.get('results', [])
-                    logger.info(f"CQL query returned {len(results_list)} results in this batch.")
-                    
-                    response = [item['content'] for item in results_list if item.get('content')]
+        Args:
+            page_limit_per_space: Maximum number of pages to fetch per space in each request.
+        
+        Returns:
+            A list of all pages from all spaces.
+        """
+        all_pages = []
+        spaces = self.get_all_spaces()
+        for space in spaces:
+            space_key = space['key']
+            pages_from_space = self.fetch_pages_from_space(space_key, limit=page_limit_per_space)
+            all_pages.extend(pages_from_space)
+        logger.info(f"Successfully fetched a total of {len(all_pages)} pages from {len(spaces)} spaces.")
+        return all_pages
 
-                    if not response:
-                        logger.info("No more pages to fetch in this batch or no results found.")
-                        break
-                    
-                    for page in response:
-                        processed_page = self._process_page(page)
-                        if processed_page:
-                            pages.append(processed_page)
-                            logger.info(f"Fetched page: {processed_page['title']}")
-                    
-                    if len(response) < limit:
-                        break
-                    
-                    start += limit
-
-            elif self.space_key:
-                # If only a space key is provided, fetch all pages from that space.
-                while True:
-                    response = self.confluence.get_all_pages_from_space(
-                        space=self.space_key,
-                        start=start,
-                        limit=limit,
-                        expand="body.storage,version,metadata.labels"
-                    )
-                    
-                    if not response:
-                        break
-                    
-                    for page in response:
-                        processed_page = self._process_page(page)
-                        if processed_page:
-                            pages.append(processed_page)
-                            logger.info(f"Fetched page: {processed_page['title']}")
-                    
-                    if len(response) < limit:
-                        break
-                    
-                    start += limit
-            else:
-                # If neither a label nor a space key is provided, fetch from all spaces.
-                logger.info("No space key or label specified. Fetching pages from all available spaces.")
-                all_spaces_response = self.confluence.get_all_spaces(start=0, limit=50, expand='description.plain,homepage')
-                all_spaces = all_spaces_response.get('results', [])
-                
-                for space in all_spaces:
-                    space_key = space['key']
-                    logger.info(f"Fetching pages from space: {space_key}")
-                    
-                    space_start = 0
-                    while True:
-                        space_pages = self.confluence.get_all_pages_from_space(
-                            space=space_key,
-                            start=space_start,
-                            limit=limit,
-                            expand="body.storage,version,metadata.labels"
-                        )
-                        if not space_pages:
-                            break
-                        
-                        for page in space_pages:
-                            processed_page = self._process_page(page)
-                            if processed_page:
-                                pages.append(processed_page)
-                                logger.info(f"Fetched page: {processed_page['title']}")
-                        
-                        if len(space_pages) < limit:
-                            break
-                        
-                        space_start += limit
-
-            logger.info(f"Successfully fetched {len(pages)} pages from Confluence")
-            return pages
+    def fetch_all_pages(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """
+        Fetch pages from Confluence based on the configuration provided during initialization.
+        - If a `required_label` is set, it fetches pages with that label (optionally filtered by `space_key`).
+        - If only a `space_key` is set, it fetches all pages from that space.
+        - If neither is set, it fetches all pages from all available spaces.
+        
+        Args:
+            limit: Maximum number of pages to fetch per request.
             
-        except Exception as e:
-            logger.error(f"Error fetching Confluence pages: {e}")
-            raise
-    
+        Returns:
+            List of page dictionaries with content and metadata.
+        """
+        if self.required_label:
+            logger.info(f"Fetching pages with label '{self.required_label}'...")
+            return self.get_documents_by_label(self.required_label, self.space_key, limit=limit)
+
+        if self.space_key:
+            logger.info(f"Fetching all pages from space '{self.space_key}'...")
+            return self.fetch_pages_from_space(self.space_key, limit=limit)
+
+        logger.info("Fetching all pages from all spaces...")
+        return self.fetch_all_pages_from_all_spaces(page_limit_per_space=limit)
+
     def fetch_page_by_id(self, page_id: str) -> Optional[Dict[str, Any]]:
         """
         Fetch a specific page by ID.
@@ -187,9 +186,8 @@ class ConfluenceFetcher:
             List of matching pages
         """
         try:
-            # CQL results are wrapped in "content"; expand must reference that wrapper.
             results = self.confluence.cql(
-                cql=cql,
+                cql=cql, 
                 limit=limit,
                 expand="content.body.storage,content.version,content.metadata.labels"
             )
@@ -220,14 +218,9 @@ class ConfluenceFetcher:
             Processed page dictionary
         """
         try:
-            # Extract HTML content
             html_content = page.get("body", {}).get("storage", {}).get("value", "")
-            
-            # Parse HTML and extract text
             soup = BeautifulSoup(html_content, "html.parser")
             text_content = soup.get_text(separator="\n", strip=True)
-            
-            # Extract metadata
             version = page.get("version", {})
             labels = [label.get("name") for label in page.get("metadata", {}).get("labels", {}).get("results", [])]
             
@@ -249,183 +242,19 @@ class ConfluenceFetcher:
             logger.error(f"Error processing page: {e}")
             return None
     
-    def get_page_children(self, page_id: str) -> List[Dict[str, Any]]:
-        """
-        Get all child pages of a specific page.
-        
-        Args:
-            page_id: Parent page ID
-            
-        Returns:
-            List of child pages
-        """
-        try:
-            children = self.confluence.get_page_child_by_type(
-                page_id=page_id,
-                type="page",
-                expand="body.storage,version,metadata.labels"
-            )
-            
-            pages = []
-            for child in children:
-                processed_page = self._process_page(child)
-                if processed_page:
-                    pages.append(processed_page)
-            
-            return pages
-            
-        except Exception as e:
-            logger.error(f"Error fetching children of page {page_id}: {e}")
-            return []
-
-    def update_page(self, page_id: str, title: str, content: str, parent_id: Optional[str] = None, version_comment: str = "Updated via API") -> bool:
-        """
-        Update a Confluence page.
-        
-        Args:
-            page_id: The ID of the page to update.
-            title: The new title of the page.
-            content: The new content of the page in storage format.
-            parent_id: The ID of the parent page.
-            version_comment: A comment for the new version.
-            
-        Returns:
-            True if the page was updated successfully, False otherwise.
-        """
-        try:
-            # Get the current version of the page
-            page = self.confluence.get_page_by_id(page_id, expand="version")
-            if not page:
-                logger.error(f"Page with ID {page_id} not found.")
-                return False
-            
-            current_version = page['version']['number']
-            
-            status = self.confluence.update_page(
-                page_id=page_id,
-                title=title,
-                body=content,
-                parent_id=parent_id,
-                version_comment=version_comment,
-                minor_edit=True
-            )
-            
-            logger.info(f"Successfully updated page {page_id}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Error updating page {page_id}: {e}")
-            return False
-
-    def get_documents_by_keyword(self, keyword: str, limit: int = 10) -> List[Dict[str, Any]]:
-        """
-        Retrieve documents by topic or keyword.
-        
-        Args:
-            keyword: The topic or keyword to search for.
-            limit: Maximum number of results.
-            
-        Returns:
-            List of matching pages.
-        """
-        cql = f'title ~ "{keyword}" OR text ~ "{keyword}"'
-        if self.space_key:
-            cql += f' AND space = "{self.space_key}"'
-        return self.search_pages(cql, limit=limit)
-
-    def get_documents_by_label(self, label: str, limit: int = 10) -> List[Dict[str, Any]]:
+    def get_documents_by_label(self, label: str, space_key: Optional[str] = None, limit: int = 10) -> List[Dict[str, Any]]:
         """
         Retrieve documents by a specific label.
         
         Args:
             label: The label to search for.
+            space_key: Optional space key to filter pages.
             limit: Maximum number of results.
             
         Returns:
             List of matching pages.
         """
         cql = f'label = "{label}"'
-        if self.space_key:
-            cql += f' AND space = "{self.space_key}"'
+        if space_key:
+            cql += f' AND space = "{space_key}"'
         return self.search_pages(cql, limit=limit)
-
-    def get_how_to_guides(self, limit: int = 10) -> List[Dict[str, Any]]:
-        """
-        Get step-by-step guides or SOPs.
-        
-        Args:
-            limit: Maximum number of results.
-            
-        Returns:
-            List of matching pages.
-        """
-        return self.get_documents_by_label("how-to", limit=limit)
-
-    def get_policy_info(self, limit: int = 10) -> List[Dict[str, Any]]:
-        """
-        Retrieve company policies or processes.
-        
-        Args:
-            limit: Maximum number of results.
-            
-        Returns:
-            List of matching pages.
-        """
-        return self.get_documents_by_label("policy", limit=limit)
-
-    def get_architecture_doc(self, limit: int = 10) -> List[Dict[str, Any]]:
-        """
-        Fetch architecture or design documentation.
-        
-        Args:
-            limit: Maximum number of results.
-            
-        Returns:
-            List of matching pages.
-        """
-        return self.get_documents_by_label("architecture", limit=limit)
-
-    def get_team_page(self, team_name: str, limit: int = 10) -> List[Dict[str, Any]]:
-        """
-        Access team pages or meeting notes.
-        
-        Args:
-            team_name: The name of the team to search for.
-            limit: Maximum number of results.
-            
-        Returns:
-            List of matching pages.
-        """
-        cql = f'(label = "team" OR label = "meeting-notes") AND title ~ "{team_name}"'
-        if self.space_key:
-            cql += f' AND space = "{self.space_key}"'
-        return self.search_pages(cql, limit=limit)
-
-    def get_onboarding_docs(self, limit: int = 10) -> List[Dict[str, Any]]:
-        """
-        Get onboarding or training pages.
-        
-        Args:
-            limit: Maximum number of results.
-            
-        Returns:
-            List of matching pages.
-        """
-        return self.get_documents_by_label("onboarding", limit=limit)
-
-    def get_page_history(self, page_id: str) -> List[Dict[str, Any]]:
-        """
-        Retrieve version/edit history of a page.
-        
-        Args:
-            page_id: The ID of the page.
-            
-        Returns:
-            List of page versions.
-        """
-        try:
-            history = self.confluence.get_page_history(page_id)
-            return history
-        except Exception as e:
-            logger.error(f"Error fetching history for page {page_id}: {e}")
-            return []
