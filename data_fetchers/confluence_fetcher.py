@@ -64,7 +64,14 @@ class ConfluenceFetcher:
                 logger.info(f"Fetching pages using CQL: {cql}")
                 
                 while True:
-                    search_results = self.confluence.cql(cql, start=start, limit=limit, expand="body.storage,version,metadata.labels")
+                    # CQL endpoint returns results wrapped in a "content" object.
+                    # The expand must target the wrapped content fields.
+                    search_results = self.confluence.cql(
+                        cql,
+                        start=start,
+                        limit=limit,
+                        expand="content.body.storage,content.version,content.metadata.labels"
+                    )
                     
                     results_list = search_results.get('results', [])
                     logger.info(f"CQL query returned {len(results_list)} results in this batch.")
@@ -180,10 +187,11 @@ class ConfluenceFetcher:
             List of matching pages
         """
         try:
+            # CQL results are wrapped in "content"; expand must reference that wrapper.
             results = self.confluence.cql(
-                cql=cql, 
+                cql=cql,
                 limit=limit,
-                expand="body.storage,version,metadata.labels"
+                expand="content.body.storage,content.version,content.metadata.labels"
             )
             pages = []
             
