@@ -257,12 +257,8 @@ class ConfluenceFetcher:
         cql = f'label = "{label}"'
         
         # Use the provided space_key, but fall back to the instance's space_key if not provided
-        effective_space_key = space_key if space_key is not None else self.space_key
         
-        if effective_space_key:
-            cql += f' AND space = "{effective_space_key}"'
-        
-        logger.info(f"Executing CQL query: {cql}")
+        logger.info(f"Executing CQL query: {cql}")  # Add logging to show the exact query
         return self.search_pages(cql, limit=limit)
 
     def get_documents_by_user(self, username: str, limit: int = 10) -> List[Dict[str, Any]]:
@@ -283,3 +279,5 @@ class ConfluenceFetcher:
         
         logger.info(f"Executing CQL query for user: {cql}")
         return self.search_pages(cql, limit=limit)
+    
+# End of ConfluenceFetcher class
