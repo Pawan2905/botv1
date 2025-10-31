@@ -255,6 +255,31 @@ class ConfluenceFetcher:
             List of matching pages.
         """
         cql = f'label = "{label}"'
-        if space_key:
-            cql += f' AND space = "{space_key}"'
+        
+        # Use the provided space_key, but fall back to the instance's space_key if not provided
+        effective_space_key = space_key if space_key is not None else self.space_key
+        
+        if effective_space_key:
+            cql += f' AND space = "{effective_space_key}"'
+        
+        logger.info(f"Executing CQL query: {cql}")
+        return self.search_pages(cql, limit=limit)
+
+    def get_documents_by_user(self, username: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Retrieve documents created or contributed to by a specific user.
+        
+        Args:
+            username: The username or account ID to search for.
+            limit: Maximum number of results.
+            
+        Returns:
+            List of matching pages.
+        """
+        # Note: Confluence CQL user fields (`creator`, `contributor`) often require the user's account ID.
+        cql = f'creator = "{username}" OR contributor = "{username}"'
+        if self.space_key:
+            cql += f' AND space = "{self.space_key}"'
+        
+        logger.info(f"Executing CQL query for user: {cql}")
         return self.search_pages(cql, limit=limit)
