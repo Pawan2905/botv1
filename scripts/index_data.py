@@ -47,6 +47,10 @@ def main():
     logger.info("=" * 80)
     logger.info("Starting data indexing process")
     logger.info(f"Source: {args.source}, Refresh: {args.refresh}, Use MCP: {args.use_mcp}")
+    if settings.confluence_space_key:
+        logger.info(f"Confluence Space Key: {settings.confluence_space_key}")
+    if settings.confluence_required_label:
+        logger.info(f"Confluence Label: {settings.confluence_required_label}")
     logger.info("=" * 80)
     
     try:
