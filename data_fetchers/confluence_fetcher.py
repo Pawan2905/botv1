@@ -280,4 +280,4 @@ class ConfluenceFetcher:
         logger.info(f"Executing CQL query for user: {cql}")
         return self.search_pages(cql, limit=limit)
     
-# End of ConfluenceFetcher class
+# End of ConfluenceFetcher class    ##

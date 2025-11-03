@@ -200,6 +200,7 @@ def main():
         logger.error(f"Indexing failed: {e}", exc_info=True)
         sys.exit(1)
 
+# end of main()
 
 if __name__ == "__main__":
     main()
