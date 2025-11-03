@@ -41,12 +41,6 @@ def main():
         action="store_true",
         help="Use MCP server for multi-source integration"
     )
-    parser.add_argument(
-        "--label",
-        type=str,
-        default=None,
-        help="Confluence label to filter pages"
-    )
     
     args = parser.parse_args()
     
@@ -136,13 +130,13 @@ def main():
                     username=settings.confluence_username,
                     api_token=settings.confluence_api_token,
                     space_key=settings.confluence_space_key,
-                    required_label=args.label  # Pass the label to the fetcher
+                    required_label=settings.confluence_required_label
                 )
                 
-                # If a label is provided, fetch by label; otherwise, fetch all pages
-                if args.label:
-                    logger.info(f"Fetching Confluence pages with label: {args.label}")
-                    confluence_pages = confluence_fetcher.get_documents_by_label(args.label)
+                # If a label is provided in the settings, fetch by label; otherwise, fetch all pages
+                if settings.confluence_required_label:
+                    logger.info(f"Fetching Confluence pages with label: {settings.confluence_required_label}")
+                    confluence_pages = confluence_fetcher.get_documents_by_label(settings.confluence_required_label)
                 else:
                     logger.info("Fetching all Confluence pages...")
                     confluence_pages = confluence_fetcher.fetch_all_pages()
