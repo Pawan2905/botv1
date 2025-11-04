@@ -41,3 +41,7 @@ nltk==3.8.1
 aiohttp==3.9.3
 botbuilder-core==4.17.2
 botbuilder-schema==4.17.2
+
+# LangGraph
+langgraph==0.0.20
+langchain==0.1.9
