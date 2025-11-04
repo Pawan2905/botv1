@@ -7,9 +7,15 @@ RAG_BOT_API_URL = os.environ.get("RagBotApiUrl", "http://localhost:8000/chat")
 
 async def invoke_rag_bot(state: AgentState):
     """
-    Invokes the RAG bot API to get a response.
+    Invokes the RAG bot API to get a response, checking the cache first.
     """
     user_message = state['history'][-1]
+
+    # Check cache first
+    if user_message in state.get('cache', {}):
+        bot_response = state['cache'][user_message]
+        return {"history": state['history'] + [f"assistant: {bot_response} (cached)"]}
+
     payload = {"message": user_message, "use_jira_live": True}
     
     async with aiohttp.ClientSession() as session:
@@ -20,7 +26,11 @@ async def invoke_rag_bot(state: AgentState):
             else:
                 bot_response = f"Error: Could not reach the RAG bot. Status: {resp.status}"
     
-    return {"history": state['history'] + [f"assistant: {bot_response}"]}
+    # Update cache
+    new_cache = state.get('cache', {}).copy()
+    new_cache[user_message] = bot_response
+    
+    return {"history": state['history'] + [f"assistant: {bot_response}"], "cache": new_cache}
 
 def should_continue(state: AgentState):
     """

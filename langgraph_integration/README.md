@@ -38,3 +38,7 @@ To run the LangGraph-based Teams bot, you need to have both the main RAG bot and
    ```
 
 Make sure you have the required environment variables set up in your `.env` file. `MicrosoftAppId` and `RagBotApiUrl` are required. `MicrosoftAppPassword` is optional for local testing but required for production deployment.
+
+### Port Configuration
+
+The Teams adapter runs on the port specified by the `PORT` environment variable, defaulting to `3978`. If your service is running on a different port (e.g., 3687), ensure that you update your bot's messaging endpoint in the Azure Bot registration or your Bot Framework Emulator settings to match. The endpoint will be `http://localhost:<PORT>/api/messages`.

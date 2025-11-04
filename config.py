@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     # ChromaDB Configuration
     chroma_persist_directory: str = Field(default="./chroma_db", env="CHROMA_PERSIST_DIRECTORY")
     chroma_collection_name: str = Field(default="confluence_jira_docs", env="CHROMA_COLLECTION_NAME")
+    chroma_user_history_collection_name: str = Field(default="user_interaction_history", env="CHROMA_USER_HISTORY_COLLECTION_NAME")
     
     # Chunking Configuration
     chunk_size: int = Field(default=1000, env="CHUNK_SIZE")

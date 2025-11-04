@@ -1,4 +1,4 @@
-from typing import List, TypedDict
+from typing import Dict, List, TypedDict
 
 class AgentState(TypedDict):
     """
@@ -8,3 +8,4 @@ class AgentState(TypedDict):
     context: str
     user_id: str
     team_id: str
+    cache: Dict[str, str]
