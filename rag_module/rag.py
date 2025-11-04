@@ -1,109 +1,73 @@
 """
-Core RAG (Retrieval-Augmented Generation) module.
-This script orchestrates the RAG pipeline, including data fetching,
-indexing, and retrieval.
+Reusable RAG (Retrieval-Augmented Generation) module.
+This script provides a simplified interface to the main BotService,
+orchestrating the RAG pipeline for indexing and querying.
 """
 
 import logging
 from typing import List, Dict, Any, Optional
-from rag_module.confluence_processor import ConfluenceProcessor
-from storage.chroma_store import ChromaStore
-from storage.embeddings import get_embedding_function
-from storage.chunker import ChunkingStrategy, UnstructuredChunker
+
+# Add the root directory to the Python path to ensure imports work correctly
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from api.bot_service import BotService
 
 logger = logging.getLogger(__name__)
 
 
 class RAG:
-    """Handles the end-to-end RAG pipeline."""
+    """
+    A simplified, reusable interface for the RAG pipeline.
+    This class orchestrates the existing project components for a streamlined experience.
+    """
 
-    def __init__(self, chroma_persist_dir: str, chroma_collection_name: str):
+    def __init__(self):
         """
-        Initialize the RAG pipeline.
+        Initialize the RAG module by creating an instance of the BotService.
+        """
+        try:
+            self.bot_service = BotService()
+            logger.info("RAG module initialized successfully, using existing BotService.")
+        except Exception as e:
+            logger.error(f"Failed to initialize RAG module: {e}")
+            raise
+
+    def index_confluence_space(self, refresh: bool = False) -> Dict[str, Any]:
+        """
+        Index all documents from the configured Confluence space.
 
         Args:
-            chroma_persist_dir: Directory to persist ChromaDB data.
-            chroma_collection_name: Name of the ChromaDB collection.
-        """
-        self.embeddings = get_embedding_function()
-        self.chroma_store = ChromaStore(
-            persist_directory=chroma_persist_dir,
-            collection_name=chroma_collection_name,
-        )
-        self.chunker = UnstructuredChunker(strategy=ChunkingStrategy.DEFAULT)
-        logger.info("RAG pipeline initialized.")
-
-    def index_confluence_space(
-        self,
-        confluence_url: str,
-        confluence_user: str,
-        confluence_token: str,
-        space_key: str,
-        label: Optional[str] = None,
-    ) -> None:
-        """
-        Fetch, chunk, and index documents from a Confluence space.
-
-        Args:
-            confluence_url: The URL of the Confluence instance.
-            confluence_user: The username for Confluence authentication.
-            confluence_token: The API token for Confluence authentication.
-            space_key: The key of the space to index.
-            label: Optional label to filter pages within the space.
-        """
-        processor = ConfluenceProcessor(
-            url=confluence_url,
-            username=confluence_user,
-            api_token=confluence_token,
-        )
-
-        logger.info(f"Fetching documents from Confluence space: {space_key}")
-        documents = processor.fetch_pages(space_key=space_key, label=label)
-
-        if not documents:
-            logger.warning("No documents found to index.")
-            return
-
-        logger.info(f"Chunking {len(documents)} documents...")
-        chunks = self.chunker.create_chunks(documents)
-
-        logger.info(f"Generating embeddings for {len(chunks)} chunks...")
-        chunk_contents = [chunk["content"] for chunk in chunks]
-        embeddings = self.embeddings.embed_documents(chunk_contents)
-
-        logger.info("Adding documents to ChromaDB...")
-        self.chroma_store.add_documents(chunks, embeddings)
-        logger.info("Confluence space indexing complete.")
-
-    def query(self, query_text: str, top_k: int = 5, filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
-        """
-        Query the indexed documents.
-
-        Args:
-            query_text: The query to search for.
-            top_k: The number of results to return.
-            filters: Optional metadata filters for the search.
+            refresh: If True, the existing index will be cleared before indexing.
 
         Returns:
-            A list of retrieved documents.
+            A dictionary with the status of the indexing process.
         """
-        logger.info(f"Executing query: '{query_text}'")
-        query_embedding = self.embeddings.embed_query(query_text)
+        logger.info("Starting Confluence indexing through the RAG module...")
+        try:
+            return self.bot_service.index_data(source="confluence", refresh=refresh)
+        except Exception as e:
+            logger.error(f"Confluence indexing failed: {e}")
+            raise
 
-        results = self.chroma_store.query(
-            query_embedding=query_embedding,
-            n_results=top_k,
-            where=filters,
-        )
+    def query(self, query_text: str, conversation_history: Optional[List[Dict[str, str]]] = None) -> Dict[str, Any]:
+        """
+        Perform a RAG query. This includes retrieval from the indexed documents
+        and generation of an answer by the LLM.
 
-        formatted_results = []
-        if results["documents"] and results["documents"][0]:
-            for i in range(len(results["documents"][0])):
-                formatted_results.append({
-                    "content": results["documents"][0][i],
-                    "metadata": results["metadatas"][0][i],
-                    "score": 1.0 - results["distances"][0][i],
-                })
-        
-        logger.info(f"Query returned {len(formatted_results)} results.")
-        return formatted_results
+        Args:
+            query_text: The user's query.
+            conversation_history: Optional. A list of previous conversation turns.
+
+        Returns:
+            A dictionary containing the response and the sources.
+        """
+        logger.info(f"Performing RAG query: '{query_text}'")
+        try:
+            # We use the _tool_rag_search method directly to bypass the agentic routing
+            # and go straight to the RAG implementation.
+            return self.bot_service._tool_rag_search(query=query_text, conversation_history=conversation_history)
+        except Exception as e:
+            logger.error(f"RAG query failed: {e}")
+            raise
