@@ -54,11 +54,14 @@ class Settings(BaseSettings):
     confluence_url: str = Field(..., env="CONFLUENCE_URL")
     confluence_username: str = Field(..., env="CONFLUENCE_USERNAME")
     confluence_api_token: str = Field(..., env="CONFLUENCE_API_TOKEN")
+    confluence_space_key: Optional[str] = Field(default=None, env="CONFLUENCE_SPACE_KEY")
+    confluence_required_label: Optional[str] = Field(default=None, env="CONFLUENCE_REQUIRED_LABEL")
 
     # Jira Configuration
     jira_url: str = Field(..., env="JIRA_URL")
     jira_username: str = Field(..., env="JIRA_USERNAME")
     jira_api_token: str = Field(..., env="JIRA_API_TOKEN")
+    jira_project_key: Optional[str] = Field(default=None, env="JIRA_PROJECT_KEY")
     
     # Loader Configuration from YAML
     loader: LoaderSettings = Field(default_factory=lambda: LoaderSettings.model_validate(yaml_config.get("loader", {})))

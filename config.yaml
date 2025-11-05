@@ -1,0 +1,12 @@
+loader:
+  confluence:
+    enable: true
+    sources:
+      - space: "space1"
+        optional_labels: ["label1", "label2"]
+      - space: "space2"
+  jira:
+    enable: true
+    sources:
+      - labels: ["label1", "label2"]
+      - labels: ["label3"]

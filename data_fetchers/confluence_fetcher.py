@@ -16,7 +16,9 @@ class ConfluenceFetcher:
         self,
         url: str,
         username: str,
-        api_token: str
+        api_token: str,
+        space_key: Optional[str] = None,
+        required_label: Optional[str] = None
     ):
         """
         Initialize Confluence fetcher.
@@ -25,6 +27,8 @@ class ConfluenceFetcher:
             url: Confluence instance URL
             username: Confluence username/email
             api_token: Confluence API token
+            space_key: Optional space key to filter pages
+            required_label: Optional label to filter pages
         """
         self.confluence = Confluence(
             url=url,
@@ -32,6 +36,8 @@ class ConfluenceFetcher:
             password=api_token,
             cloud=True
         )
+        self.space_key = space_key
+        self.required_label = required_label
         logger.info(f"Initialized Confluence fetcher for {url}")
 
     def get_all_spaces(self, limit: int = 50) -> List[Dict[str, Any]]:
@@ -124,9 +130,9 @@ class ConfluenceFetcher:
         logger.info(f"Successfully fetched a total of {len(all_pages)} pages from {len(spaces)} spaces.")
         return all_pages
 
-    def fetch_all_pages(self, sources: List[Dict[str, Any]], limit: int = 100) -> List[Dict[str, Any]]:
+    def fetch_all_pages(self, sources: Optional[List[Dict[str, Any]]] = None, limit: int = 100) -> List[Dict[str, Any]]:
         """
-        Fetch pages from Confluence based on a list of sources.
+        Fetch pages from Confluence based on either the new sources format or the old configuration.
         
         Args:
             sources: A list of source configurations, each specifying a space and optional labels.
@@ -135,20 +141,32 @@ class ConfluenceFetcher:
         Returns:
             List of page dictionaries with content and metadata.
         """
-        all_pages = []
-        for source in sources:
-            space = source.get("space")
-            labels = source.get("optional_labels")
-            
-            if labels:
-                for label in labels:
-                    logger.info(f"Fetching pages from space '{space}' with label '{label}'...")
-                    all_pages.extend(self.get_documents_by_label(label, [space], limit=limit))
-            elif space:
-                logger.info(f"Fetching all pages from space '{space}'...")
-                all_pages.extend(self.fetch_pages_from_space(space, limit=limit))
+        if sources:
+            all_pages = []
+            for source in sources:
+                space = source.get("space")
+                labels = source.get("optional_labels")
+                
+                if labels:
+                    for label in labels:
+                        logger.info(f"Fetching pages from space '{space}' with label '{label}'...")
+                        all_pages.extend(self.get_documents_by_label(label, [space], limit=limit))
+                elif space:
+                    logger.info(f"Fetching all pages from space '{space}'...")
+                    all_pages.extend(self.fetch_pages_from_space(space, limit=limit))
+            return all_pages
+        
+        # Fallback to old method
+        if self.required_label:
+            logger.info(f"Fetching pages with label '{self.required_label}'...")
+            return self.get_documents_by_label(self.required_label, [self.space_key] if self.space_key else None, limit=limit)
 
-        return all_pages
+        if self.space_key:
+            logger.info(f"Fetching all pages from space '{self.space_key}'...")
+            return self.fetch_pages_from_space(self.space_key, limit=limit)
+
+        logger.info("Fetching all pages from all spaces...")
+        return self.fetch_all_pages_from_all_spaces(page_limit_per_space=limit)
 
     def fetch_page_by_id(self, page_id: str) -> Optional[Dict[str, Any]]:
         """
