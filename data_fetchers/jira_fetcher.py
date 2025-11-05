@@ -15,8 +15,7 @@ class JiraFetcher:
         self,
         url: str,
         username: str,
-        api_token: str,
-        project_key: Optional[str] = None
+        api_token: str
     ):
         """
         Initialize Jira fetcher.
@@ -25,14 +24,12 @@ class JiraFetcher:
             url: Jira instance URL
             username: Jira username/email
             api_token: Jira API token
-            project_key: Optional project key to filter issues
         """
         try:
             self.jira = JIRA(
                 server=url,
                 basic_auth=(username, api_token)  # For Jira Cloud, api_token is used as password
             )
-            self.project_key = project_key
             self.url = url
             logger.info(f"Initialized Jira fetcher for {url}")
             
@@ -44,23 +41,64 @@ class JiraFetcher:
             logger.error(f"Failed to initialize Jira connection: {e}")
             raise
     
-    def fetch_all_issues(self, jql: Optional[str] = None, max_results: int = 1000) -> List[Dict[str, Any]]:
+    def fetch_all_issues(self, sources: List[Dict[str, Any]], max_results: int = 1000) -> List[Dict[str, Any]]:
         """
-        Fetch all issues matching the JQL query.
+        Fetch all issues based on a list of sources.
         
         Args:
-            jql: JQL query string (optional)
+            sources: A list of source configurations, each specifying a list of labels.
             max_results: Maximum number of results to fetch
             
         Returns:
             List of issue dictionaries with content and metadata
         """
-        if jql is None:
-            if self.project_key:
-                jql = f"project = {self.project_key} ORDER BY updated DESC"
-            else:
-                jql = "ORDER BY updated DESC"
+        all_issues = []
+        for source in sources:
+            labels = source.get("labels")
+            if not labels:
+                continue
+
+            labels_str = ", ".join(f'"{label}"' for label in labels)
+            jql = f"labels in ({labels_str}) ORDER BY updated DESC"
+            
+            try:
+                issues = []
+                start_at = 0
+                batch_size = 100
+                
+                while start_at < max_results:
+                    batch = self.jira.search_issues(
+                        jql,
+                        startAt=start_at,
+                        maxResults=batch_size,
+                        expand="changelog,renderedFields"
+                    )
+                    
+                    if not batch:
+                        break
+                    
+                    for issue in batch:
+                        processed_issue = self._process_issue(issue)
+                        if processed_issue:
+                            issues.append(processed_issue)
+                            logger.info(f"Fetched issue: {processed_issue['key']}")
+                    
+                    if len(batch) < batch_size:
+                        break
+                    
+                    start_at += batch_size
+                
+                all_issues.extend(issues)
+                logger.info(f"Successfully fetched {len(issues)} issues from Jira for labels {labels}")
+                
+            except Exception as e:
+                logger.error(f"Error fetching Jira issues for labels {labels}: {e}")
+                raise
         
+        return all_issues
+    
+    def _fetch_issues_with_jql(self, jql: str, max_results: int = 1000) -> List[Dict[str, Any]]:
+        """Helper function to fetch issues with a given JQL query."""
         try:
             issues = []
             start_at = 0

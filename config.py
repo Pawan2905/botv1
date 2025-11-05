@@ -1,13 +1,41 @@
 """Configuration management for the RAG application."""
 
 import os
-from typing import Optional
+from typing import Optional, List, Dict, Any
+import yaml
+from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings
-from pydantic import Field
 
+def load_yaml_config(file_path: str) -> dict:
+    """Load configuration from a YAML file."""
+    if os.path.exists(file_path):
+        with open(file_path, 'r') as file:
+            return yaml.safe_load(file)
+    return {}
+
+yaml_config = load_yaml_config("config.yaml")
+
+class ConfluenceSource(BaseModel):
+    space: str
+    optional_labels: Optional[List[str]] = None
+
+class JiraSource(BaseModel):
+    labels: List[str]
+
+class ConfluenceLoader(BaseModel):
+    enable: bool = False
+    sources: List[ConfluenceSource] = []
+
+class JiraLoader(BaseModel):
+    enable: bool = False
+    sources: List[JiraSource] = []
+
+class LoaderSettings(BaseModel):
+    confluence: ConfluenceLoader = ConfluenceLoader()
+    jira: JiraLoader = JiraLoader()
 
 class Settings(BaseSettings):
-    """Application settings loaded from environment variables."""
+    """Application settings loaded from environment variables and config.yaml."""
     
     # Azure OpenAI Configuration (for LLM)
     azure_openai_endpoint: str = Field(..., env="AZURE_OPENAI_ENDPOINT")
@@ -26,14 +54,14 @@ class Settings(BaseSettings):
     confluence_url: str = Field(..., env="CONFLUENCE_URL")
     confluence_username: str = Field(..., env="CONFLUENCE_USERNAME")
     confluence_api_token: str = Field(..., env="CONFLUENCE_API_TOKEN")
-    confluence_space_key: Optional[str] = Field(default=None, env="CONFLUENCE_SPACE_KEY")  # If None, fetches from all spaces
-    confluence_required_label: Optional[str] = Field(default=None, env="CONFLUENCE_REQUIRED_LABEL") # If set, only fetches pages with this label
-    
+
     # Jira Configuration
     jira_url: str = Field(..., env="JIRA_URL")
     jira_username: str = Field(..., env="JIRA_USERNAME")
     jira_api_token: str = Field(..., env="JIRA_API_TOKEN")
-    jira_project_key: Optional[str] = Field(default=None, env="JIRA_PROJECT_KEY")  # If None, fetches from all projects
+    
+    # Loader Configuration from YAML
+    loader: LoaderSettings = Field(default_factory=lambda: LoaderSettings.model_validate(yaml_config.get("loader", {})))
     
     # ChromaDB Configuration
     chroma_persist_directory: str = Field(default="./chroma_db", env="CHROMA_PERSIST_DIRECTORY")

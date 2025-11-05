@@ -47,10 +47,10 @@ def main():
     logger.info("=" * 80)
     logger.info("Starting data indexing process")
     logger.info(f"Source: {args.source}, Refresh: {args.refresh}, Use MCP: {args.use_mcp}")
-    if settings.confluence_space_key:
-        logger.info(f"Confluence Space Key: {settings.confluence_space_key}")
-    if settings.confluence_required_label:
-        logger.info(f"Confluence Label: {settings.confluence_required_label}")
+    if settings.loader.confluence.enable:
+        logger.info(f"Confluence sources: {settings.loader.confluence.sources}")
+    if settings.loader.jira.enable:
+        logger.info(f"Jira sources: {settings.loader.jira.sources}")
     logger.info("=" * 80)
     
     try:
@@ -87,25 +87,24 @@ def main():
             mcp_server = MCPServer()
             
             # Register data sources
-            if args.source in ["confluence", "both"]:
+            if args.source in ["confluence", "both"] and settings.loader.confluence.enable:
                 confluence_fetcher = ConfluenceFetcher(
                     url=settings.confluence_url,
                     username=settings.confluence_username,
-                    api_token=settings.confluence_api_token,
-                    space_key=settings.confluence_space_key
+                    api_token=settings.confluence_api_token
                 )
                 mcp_server.register_data_source(
                     name="confluence",
                     source_type="confluence",
-                    fetcher=confluence_fetcher
+                    fetcher=confluence_fetcher,
+                    config={"sources": [s.dict() for s in settings.loader.confluence.sources]}
                 )
             
-            if args.source in ["jira", "both"]:
+            if args.source in ["jira", "both"] and settings.loader.jira.enable:
                 jira_fetcher = JiraFetcher(
                     url=settings.jira_url,
                     username=settings.jira_username,
-                    api_token=settings.jira_api_token,
-                    project_key=settings.jira_project_key
+                    api_token=settings.jira_api_token
                 )
                 mcp_server.register_data_source(
                     name="jira",
@@ -127,36 +126,31 @@ def main():
             # Direct fetch without MCP
             all_documents = []
             
-            if args.source in ["confluence", "both"]:
+            if args.source in ["confluence", "both"] and settings.loader.confluence.enable:
                 logger.info("Fetching Confluence pages...")
                 confluence_fetcher = ConfluenceFetcher(
                     url=settings.confluence_url,
                     username=settings.confluence_username,
-                    api_token=settings.confluence_api_token,
-                    space_key=settings.confluence_space_key,
-                    required_label=settings.confluence_required_label
+                    api_token=settings.confluence_api_token
                 )
                 
-                # If a label is provided in the settings, fetch by label; otherwise, fetch all pages
-                if settings.confluence_required_label:
-                    logger.info(f"Fetching Confluence pages with label: {settings.confluence_required_label}")
-                    confluence_pages = confluence_fetcher.get_documents_by_label(settings.confluence_required_label)
-                else:
-                    logger.info("Fetching all Confluence pages...")
-                    confluence_pages = confluence_fetcher.fetch_all_pages()
+                confluence_pages = confluence_fetcher.fetch_all_pages(
+                    sources=[s.dict() for s in settings.loader.confluence.sources]
+                )
                 
                 all_documents.extend(confluence_pages)
                 logger.info(f"Fetched {len(confluence_pages)} Confluence pages")
             
-            if args.source in ["jira", "both"]:
+            if args.source in ["jira", "both"] and settings.loader.jira.enable:
                 logger.info("Fetching Jira issues...")
                 jira_fetcher = JiraFetcher(
                     url=settings.jira_url,
                     username=settings.jira_username,
-                    api_token=settings.jira_api_token,
-                    project_key=settings.jira_project_key
+                    api_token=settings.jira_api_token
                 )
-                jira_issues = jira_fetcher.fetch_all_issues()
+                jira_issues = jira_fetcher.fetch_all_issues(
+                    sources=[s.dict() for s in settings.loader.jira.sources]
+                )
                 all_documents.extend(jira_issues)
                 logger.info(f"Fetched {len(jira_issues)} Jira issues")
         

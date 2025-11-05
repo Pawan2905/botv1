@@ -16,9 +16,7 @@ class ConfluenceFetcher:
         self,
         url: str,
         username: str,
-        api_token: str,
-        space_key: Optional[str] = None,
-        required_label: Optional[str] = None
+        api_token: str
     ):
         """
         Initialize Confluence fetcher.
@@ -27,8 +25,6 @@ class ConfluenceFetcher:
             url: Confluence instance URL
             username: Confluence username/email
             api_token: Confluence API token
-            space_key: Optional space key to filter pages
-            required_label: Optional label to filter pages
         """
         self.confluence = Confluence(
             url=url,
@@ -36,8 +32,6 @@ class ConfluenceFetcher:
             password=api_token,
             cloud=True
         )
-        self.space_key = space_key
-        self.required_label = required_label
         logger.info(f"Initialized Confluence fetcher for {url}")
 
     def get_all_spaces(self, limit: int = 50) -> List[Dict[str, Any]]:
@@ -130,29 +124,31 @@ class ConfluenceFetcher:
         logger.info(f"Successfully fetched a total of {len(all_pages)} pages from {len(spaces)} spaces.")
         return all_pages
 
-    def fetch_all_pages(self, limit: int = 100) -> List[Dict[str, Any]]:
+    def fetch_all_pages(self, sources: List[Dict[str, Any]], limit: int = 100) -> List[Dict[str, Any]]:
         """
-        Fetch pages from Confluence based on the configuration provided during initialization.
-        - If a `required_label` is set, it fetches pages with that label (optionally filtered by `space_key`).
-        - If only a `space_key` is set, it fetches all pages from that space.
-        - If neither is set, it fetches all pages from all available spaces.
+        Fetch pages from Confluence based on a list of sources.
         
         Args:
+            sources: A list of source configurations, each specifying a space and optional labels.
             limit: Maximum number of pages to fetch per request.
             
         Returns:
             List of page dictionaries with content and metadata.
         """
-        if self.required_label:
-            logger.info(f"Fetching pages with label '{self.required_label}'...")
-            return self.get_documents_by_label(self.required_label, self.space_key, limit=limit)
+        all_pages = []
+        for source in sources:
+            space = source.get("space")
+            labels = source.get("optional_labels")
+            
+            if labels:
+                for label in labels:
+                    logger.info(f"Fetching pages from space '{space}' with label '{label}'...")
+                    all_pages.extend(self.get_documents_by_label(label, [space], limit=limit))
+            elif space:
+                logger.info(f"Fetching all pages from space '{space}'...")
+                all_pages.extend(self.fetch_pages_from_space(space, limit=limit))
 
-        if self.space_key:
-            logger.info(f"Fetching all pages from space '{self.space_key}'...")
-            return self.fetch_pages_from_space(self.space_key, limit=limit)
-
-        logger.info("Fetching all pages from all spaces...")
-        return self.fetch_all_pages_from_all_spaces(page_limit_per_space=limit)
+        return all_pages
 
     def fetch_page_by_id(self, page_id: str) -> Optional[Dict[str, Any]]:
         """
@@ -242,13 +238,13 @@ class ConfluenceFetcher:
             logger.error(f"Error processing page: {e}")
             return None
     
-    def get_documents_by_label(self, label: str, space_key: Optional[str] = None, limit: int = 10) -> List[Dict[str, Any]]:
+    def get_documents_by_label(self, label: str, space_keys: Optional[List[str]] = None, limit: int = 10) -> List[Dict[str, Any]]:
         """
         Retrieve documents by a specific label.
         
         Args:
             label: The label to search for.
-            space_key: Optional space key to filter pages.
+            space_keys: Optional list of space keys to filter pages.
             limit: Maximum number of results.
             
         Returns:
@@ -256,9 +252,11 @@ class ConfluenceFetcher:
         """
         cql = f'label = "{label}"'
         
-        # Use the provided space_key, but fall back to the instance's space_key if not provided
+        if space_keys:
+            space_keys_str = ", ".join(f'"{key}"' for key in space_keys)
+            cql += f' AND space in ({space_keys_str})'
         
-        logger.info(f"Executing CQL query: {cql}")  # Add logging to show the exact query
+        logger.info(f"Executing CQL query: {cql}")
         return self.search_pages(cql, limit=limit)
 
     def get_documents_by_user(self, username: str, limit: int = 10) -> List[Dict[str, Any]]:
@@ -274,8 +272,9 @@ class ConfluenceFetcher:
         """
         # Note: Confluence CQL user fields (`creator`, `contributor`) often require the user's account ID.
         cql = f'creator = "{username}" OR contributor = "{username}"'
-        if self.space_key:
-            cql += f' AND space = "{self.space_key}"'
+        if self.space_keys:
+            space_keys_str = ", ".join(f'"{key}"' for key in self.space_keys)
+            cql += f' AND space in ({space_keys_str})'
         
         logger.info(f"Executing CQL query for user: {cql}")
         return self.search_pages(cql, limit=limit)

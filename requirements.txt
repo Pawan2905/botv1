@@ -26,6 +26,7 @@ lxml==5.1.0
 pydantic==2.5.3
 pydantic-settings==2.1.0
 python-dotenv==1.0.1
+PyYAML==6.0.1
 
 # Logging and utilities
 python-json-logger==2.0.7
