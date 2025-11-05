@@ -46,3 +46,6 @@ botbuilder-schema==4.17.2
 # LangGraph
 langgraph==0.0.20
 langchain==0.1.9
+
+# Scheduling
+apscheduler==3.10.4

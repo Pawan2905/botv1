@@ -17,3 +17,13 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+
+  scheduler:
+    build: .
+    volumes:
+      - ./chroma_db:/app/chroma_db
+      - ./.env:/app/.env
+    environment:
+      - PYTHONUNBUFFERED=1
+    command: python scripts/scheduler.py
+    restart: unless-stopped
