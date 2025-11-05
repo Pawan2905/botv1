@@ -148,9 +148,14 @@ class ConfluenceFetcher:
                 labels = source.get("optional_labels")
                 
                 if labels:
-                    for label in labels:
-                        logger.info(f"Fetching pages from space '{space}' with label '{label}'...")
-                        all_pages.extend(self.get_documents_by_label(label, [space], limit=limit))
+                    label_query = " AND ".join(f'label = "{label}"' for label in labels)
+                    cql = f"({label_query})"
+                    if space:
+                        cql += f' AND space = "{space}"'
+                        logger.info(f"Fetching pages from space '{space}' with labels {labels}...")
+                    else:
+                        logger.info(f"Fetching pages with labels {labels} from all spaces...")
+                    all_pages.extend(self.search_pages(cql, limit=limit))
                 elif space:
                     logger.info(f"Fetching all pages from space '{space}'...")
                     all_pages.extend(self.fetch_pages_from_space(space, limit=limit))
