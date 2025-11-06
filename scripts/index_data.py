@@ -13,7 +13,6 @@ from data_fetchers import ConfluenceFetcher, JiraFetcher
 from storage import ChromaStore, AzureOpenAIEmbeddings, TextChunker
 from retrieval import HybridRetriever
 from mcp_server import MCPServer
-from langchain_core.documents import Document
 
 # Configure logging
 logging.basicConfig(
@@ -72,7 +71,8 @@ def main():
         
         chroma_store = ChromaStore(
             persist_directory=settings.chroma_persist_directory,
-            collection_name=settings.chroma_collection_name
+            collection_name=settings.chroma_collection_name,
+            embedding_function=embeddings
         )
         
         chunker = TextChunker(

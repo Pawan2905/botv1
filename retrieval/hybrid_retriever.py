@@ -2,7 +2,7 @@
 
 import logging
 from typing import List, Dict, Any, Optional
-from langchain.retrievers import EnsembleRetriever
+from langchain.retrievers.ensemble import EnsembleRetriever
 from langchain_core.documents import Document
 from .bm25_retriever import BM25Retriever
 from storage.chroma_store import ChromaStore
