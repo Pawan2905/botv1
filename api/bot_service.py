@@ -8,7 +8,7 @@ from openai import AzureOpenAI
 
 from config import settings
 from data_fetchers import ConfluenceFetcher, JiraFetcher
-from storage import ChromaStore, AzureOpenAIEmbeddings, TextChunker
+from storage import ChromaStore, PostgresStore, AzureOpenAIEmbeddings, TextChunker
 from retrieval import HybridRetriever
 
 logger = logging.getLogger(__name__)
@@ -36,12 +36,22 @@ class BotService:
             api_version=settings.azure_embedding_api_version,
             use_apim=settings.use_apim_for_embeddings
         )
-        self.chroma_store = ChromaStore(
-            persist_directory=settings.chroma_persist_directory,
-            collection_name=settings.chroma_collection_name
-        )
+        
+        if settings.storage.provider == "postgres":
+            if not settings.postgres_connection_string:
+                raise ValueError("POSTGRES_CONNECTION_STRING is not set")
+            self.vector_store = PostgresStore(
+                connection_string=settings.postgres_connection_string,
+                collection_name=settings.postgres_collection_name
+            )
+        else:
+            self.vector_store = ChromaStore(
+                persist_directory=settings.chroma_persist_directory,
+                collection_name=settings.chroma_collection_name
+            )
+
         self.chunker = TextChunker(chunk_size=settings.chunk_size, chunk_overlap=settings.chunk_overlap)
-        self.retriever = HybridRetriever(chroma_store=self.chroma_store, embeddings=self.embeddings, alpha=settings.hybrid_alpha)
+        self.retriever = HybridRetriever(chroma_store=self.vector_store, embeddings=self.embeddings, alpha=settings.hybrid_alpha)
         self.confluence_fetcher = ConfluenceFetcher(
             url=settings.confluence_url,
             username=settings.confluence_username,
@@ -645,7 +655,7 @@ If no specific tool seems appropriate, respond with an empty JSON object: {{}}.
     def index_data(self, source: str = "both", refresh: bool = False) -> Dict[str, Any]:
         logger.info(f"Starting indexing from {source} (refresh={refresh})")
         if refresh:
-            self.chroma_store.reset_collection()
+            self.vector_store.reset_collection()
         
         all_documents = []
         if source in ["confluence", "both"]:
@@ -659,7 +669,7 @@ If no specific tool seems appropriate, respond with an empty JSON object: {{}}.
         chunks = self.chunker.chunk_documents(all_documents)
         chunk_texts = [chunk["content"] for chunk in chunks]
         embeddings = self.embeddings.embed_documents(chunk_texts)
-        self.chroma_store.add_documents(chunks, embeddings)
+        self.vector_store.add_documents(chunks, embeddings)
         self.retriever.index_documents(chunks)
         
         return {"status": "completed", "documents_indexed": len(all_documents), "chunks_created": len(chunks)}
@@ -773,7 +783,7 @@ If no specific tool seems appropriate, respond with an empty JSON object: {{}}.
     
     def get_stats(self) -> Dict[str, Any]:
         return {
-            "chroma": self.chroma_store.get_stats(),
+            "vector_store": self.vector_store.get_stats(),
             "retrieval": self.retriever.get_retrieval_stats()
         }
     

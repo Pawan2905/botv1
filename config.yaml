@@ -1,3 +1,6 @@
+storage:
+  provider: "chroma"  # "chroma" or "postgres"
+
 loader:
   confluence:
     enable: true

@@ -34,8 +34,14 @@ class LoaderSettings(BaseModel):
     confluence: ConfluenceLoader = ConfluenceLoader()
     jira: JiraLoader = JiraLoader()
 
+class StorageSettings(BaseModel):
+    provider: str = Field(default="chroma", description="Storage provider: 'chroma' or 'postgres'")
+
 class Settings(BaseSettings):
     """Application settings loaded from environment variables and config.yaml."""
+    
+    # Storage Configuration from YAML
+    storage: StorageSettings = Field(default_factory=lambda: StorageSettings.model_validate(yaml_config.get("storage", {})))
     
     # Azure OpenAI Configuration (for LLM)
     azure_openai_endpoint: str = Field(..., env="AZURE_OPENAI_ENDPOINT")
@@ -69,7 +75,10 @@ class Settings(BaseSettings):
     # ChromaDB Configuration
     chroma_persist_directory: str = Field(default="./chroma_db", env="CHROMA_PERSIST_DIRECTORY")
     chroma_collection_name: str = Field(default="confluence_jira_docs", env="CHROMA_COLLECTION_NAME")
-    chroma_user_history_collection_name: str = Field(default="user_interaction_history", env="CHROMA_USER_HISTORY_COLLECTION_NAME")
+    
+    # PostgreSQL Configuration
+    postgres_connection_string: Optional[str] = Field(default=None, env="POSTGRES_CONNECTION_STRING")
+    postgres_collection_name: str = Field(default="confluence_jira_docs", env="POSTGRES_COLLECTION_NAME")
     
     # Chunking Configuration
     chunk_size: int = Field(default=1000, env="CHUNK_SIZE")

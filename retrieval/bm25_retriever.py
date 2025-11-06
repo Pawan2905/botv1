@@ -4,13 +4,12 @@ import logging
 from typing import List, Dict, Any
 from rank_bm25 import BM25Okapi
 import numpy as np
-from langchain_core.retrievers import BaseRetriever
-from langchain_core.documents import Document
+from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
 
-class BM25Retriever(BaseRetriever):
+class BM25Retriever:
     """BM25-based sparse retriever for keyword matching."""
     
     def __init__(self):
@@ -27,33 +26,31 @@ class BM25Retriever(BaseRetriever):
         Args:
             documents: List of document dictionaries with 'content' field
         """
-        self.documents = [
-            Document(page_content=doc.get("content", ""), metadata=doc)
-            for doc in documents
-        ]
+        self.documents = documents
         
         # Tokenize documents
         self.tokenized_corpus = [
-            self._tokenize(doc.page_content)
-            for doc in self.documents
+            self._tokenize(doc.get("content", ""))
+            for doc in documents
         ]
         
         # Create BM25 index
         if self.tokenized_corpus:
             self.bm25 = BM25Okapi(self.tokenized_corpus)
-            logger.info(f"Indexed {len(self.documents)} documents for BM25 search")
+            logger.info(f"Indexed {len(documents)} documents for BM25 search")
         else:
             logger.warning("No documents to index")
     
-    def _get_relevant_documents(self, query: str) -> List[Document]:
+    def search(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
         """
         Search for documents using BM25.
         
         Args:
             query: Search query
+            top_k: Number of top results to return
             
         Returns:
-            List of top matching documents
+            List of top matching documents with scores
         """
         if not self.bm25:
             logger.warning("BM25 index not initialized")
@@ -66,15 +63,15 @@ class BM25Retriever(BaseRetriever):
         scores = self.bm25.get_scores(tokenized_query)
         
         # Get top k indices
-        top_indices = np.argsort(scores)[::-1]
+        top_indices = np.argsort(scores)[::-1][:top_k]
         
         # Format results
         results = []
         for idx in top_indices:
-            if scores[idx] > 0:
-                doc = self.documents[idx]
-                doc.metadata["bm25_score"] = float(scores[idx])
-                results.append(doc)
+            if idx < len(self.documents):
+                result = self.documents[idx].copy()
+                result["bm25_score"] = float(scores[idx])
+                results.append(result)
         
         logger.info(f"BM25 search returned {len(results)} results for query: {query[:50]}...")
         return results

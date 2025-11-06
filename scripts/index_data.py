@@ -71,8 +71,7 @@ def main():
         
         chroma_store = ChromaStore(
             persist_directory=settings.chroma_persist_directory,
-            collection_name=settings.chroma_collection_name,
-            embedding_function=embeddings
+            collection_name=settings.chroma_collection_name
         )
         
         chunker = TextChunker(
@@ -181,15 +180,15 @@ def main():
         chunks = chunker.chunk_documents(all_documents)
         logger.info(f"Created {len(chunks)} chunks")
         
-        # Convert chunks to LangChain Documents
-        documents = [
-            Document(page_content=chunk["content"], metadata=chunk)
-            for chunk in chunks
-        ]
+        # Generate embeddings
+        logger.info("Generating embeddings (this may take a while)...")
+        chunk_texts = [chunk["content"] for chunk in chunks]
+        embeddings_list = embeddings.embed_documents(chunk_texts)
+        logger.info(f"Generated {len(embeddings_list)} embeddings")
         
         # Add to ChromaDB
         logger.info("Adding documents to ChromaDB...")
-        chroma_store.add_documents(documents)
+        chroma_store.add_documents(chunks, embeddings_list)
         
         # Index for BM25
         logger.info("Indexing for BM25 (sparse retrieval)...")
