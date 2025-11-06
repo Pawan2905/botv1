@@ -13,6 +13,7 @@ from data_fetchers import ConfluenceFetcher, JiraFetcher
 from storage import ChromaStore, AzureOpenAIEmbeddings, TextChunker
 from retrieval import HybridRetriever
 from mcp_server import MCPServer
+from langchain_core.documents import Document
 
 # Configure logging
 logging.basicConfig(
@@ -180,15 +181,15 @@ def main():
         chunks = chunker.chunk_documents(all_documents)
         logger.info(f"Created {len(chunks)} chunks")
         
-        # Generate embeddings
-        logger.info("Generating embeddings (this may take a while)...")
-        chunk_texts = [chunk["content"] for chunk in chunks]
-        embeddings_list = embeddings.embed_documents(chunk_texts)
-        logger.info(f"Generated {len(embeddings_list)} embeddings")
+        # Convert chunks to LangChain Documents
+        documents = [
+            Document(page_content=chunk["content"], metadata=chunk)
+            for chunk in chunks
+        ]
         
         # Add to ChromaDB
         logger.info("Adding documents to ChromaDB...")
-        chroma_store.add_documents(chunks, embeddings_list)
+        chroma_store.add_documents(documents)
         
         # Index for BM25
         logger.info("Indexing for BM25 (sparse retrieval)...")
