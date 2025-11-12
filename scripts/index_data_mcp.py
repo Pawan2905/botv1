@@ -1,4 +1,4 @@
-"""Script to index data from Confluence and Jira into ChromaDB."""
+"""Script to index data from Confluence and Jira into ChromaDB using MCP."""
 
 import sys
 import os
@@ -23,8 +23,8 @@ logger = logging.getLogger(__name__)
 
 
 def main():
-    """Main indexing function."""
-    parser = argparse.ArgumentParser(description="Index Confluence and Jira data")
+    """Main indexing function using MCP."""
+    parser = argparse.ArgumentParser(description="Index Confluence and Jira data using MCP")
     parser.add_argument(
         "--source",
         choices=["confluence", "jira", "both"],
@@ -36,17 +36,12 @@ def main():
         action="store_true",
         help="Delete existing data before indexing"
     )
-    parser.add_argument(
-        "--use-mcp",
-        action="store_true",
-        help="Use MCP server for multi-source integration"
-    )
     
     args = parser.parse_args()
     
     logger.info("=" * 80)
-    logger.info("Starting data indexing process")
-    logger.info(f"Source: {args.source}, Refresh: {args.refresh}, Use MCP: {args.use_mcp}")
+    logger.info("Starting data indexing process via MCP")
+    logger.info(f"Source: {args.source}, Refresh: {args.refresh}")
     if settings.confluence_space_key:
         logger.info(f"Confluence Space Key: {settings.confluence_space_key}")
     if settings.confluence_required_label:
@@ -93,84 +88,48 @@ def main():
             alpha=settings.hybrid_alpha
         )
         
-        # Optionally use MCP server
-        if args.use_mcp:
-            logger.info("Using MCP Server for multi-source integration")
-            mcp_server = MCPServer()
-            
-            # Register data sources
-            if args.source in ["confluence", "both"]:
-                confluence_fetcher = ConfluenceFetcher(
-                    url=settings.confluence_url,
-                    username=settings.confluence_username,
-                    api_token=settings.confluence_api_token,
-                    space_key=settings.confluence_space_key,
-                    required_label=settings.confluence_required_label
-                )
-                mcp_server.register_data_source(
-                    name="confluence",
-                    source_type="confluence",
-                    fetcher=confluence_fetcher,
-                    config={"sources": [s.dict() for s in settings.loader.confluence.sources] if settings.loader.confluence.enable else None}
-                )
-            
-            if args.source in ["jira", "both"]:
-                jira_fetcher = JiraFetcher(
-                    url=settings.jira_url,
-                    username=settings.jira_username,
-                    api_token=settings.jira_api_token,
-                    project_key=settings.jira_project_key
-                )
-                mcp_server.register_data_source(
-                    name="jira",
-                    source_type="jira",
-                    fetcher=jira_fetcher
-                )
-            
-            # Health check
-            logger.info("Performing MCP health check...")
-            health = mcp_server.health_check()
-            logger.info(f"MCP Health Status: {health['overall_status']}")
-            
-            # Fetch from all sources
-            logger.info("Fetching data via MCP Server...")
-            results = mcp_server.fetch_from_all_sources()
-            all_documents = mcp_server.aggregate_results(results, merge_strategy="deduplicate")
-            
-        else:
-            # Direct fetch without MCP
-            all_documents = []
-            
-            if args.source in ["confluence", "both"]:
-                logger.info("Fetching Confluence pages...")
-                confluence_fetcher = ConfluenceFetcher(
-                    url=settings.confluence_url,
-                    username=settings.confluence_username,
-                    api_token=settings.confluence_api_token,
-                    space_key=settings.confluence_space_key,
-                    required_label=settings.confluence_required_label
-                )
-                
-                confluence_sources = [s.dict() for s in settings.loader.confluence.sources] if settings.loader.confluence.enable else None
-                confluence_pages = confluence_fetcher.fetch_all_pages(sources=confluence_sources)
-                
-                all_documents.extend(confluence_pages)
-                logger.info(f"Fetched {len(confluence_pages)} Confluence pages")
-            
-            if args.source in ["jira", "both"]:
-                logger.info("Fetching Jira issues...")
-                jira_fetcher = JiraFetcher(
-                    url=settings.jira_url,
-                    username=settings.jira_username,
-                    api_token=settings.jira_api_token,
-                    project_key=settings.jira_project_key
-                )
-                
-                jira_sources = [s.dict() for s in settings.loader.jira.sources] if settings.loader.jira.enable else None
-                jira_issues = jira_fetcher.fetch_all_issues(sources=jira_sources)
-                
-                all_documents.extend(jira_issues)
-                logger.info(f"Fetched {len(jira_issues)} Jira issues")
+        # Use MCP server for multi-source integration
+        logger.info("Using MCP Server for multi-source integration")
+        mcp_server = MCPServer()
+        
+        # Register data sources
+        if args.source in ["confluence", "both"]:
+            confluence_fetcher = ConfluenceFetcher(
+                url=settings.confluence_url,
+                username=settings.confluence_username,
+                api_token=settings.confluence_api_token,
+                space_key=settings.confluence_space_key,
+                required_label=settings.confluence_required_label
+            )
+            mcp_server.register_data_source(
+                name="confluence",
+                source_type="confluence",
+                fetcher=confluence_fetcher,
+                config={"sources": [s.dict() for s in settings.loader.confluence.sources] if settings.loader.confluence.enable else None}
+            )
+        
+        if args.source in ["jira", "both"]:
+            jira_fetcher = JiraFetcher(
+                url=settings.jira_url,
+                username=settings.jira_username,
+                api_token=settings.jira_api_token,
+                project_key=settings.jira_project_key
+            )
+            mcp_server.register_data_source(
+                name="jira",
+                source_type="jira",
+                fetcher=jira_fetcher
+            )
+        
+        # Health check
+        logger.info("Performing MCP health check...")
+        health = mcp_server.health_check()
+        logger.info(f"MCP Health Status: {health['overall_status']}")
+        
+        # Fetch from all sources
+        logger.info("Fetching data via MCP Server...")
+        results = mcp_server.fetch_from_all_sources()
+        all_documents = mcp_server.aggregate_results(results, merge_strategy="deduplicate")
         
         if not all_documents:
             logger.warning("No documents fetched. Exiting.")
