@@ -1,7 +1,8 @@
 """FastAPI application for the RAG bot."""
 
 import logging
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
+from fastapi import FastAPI, HTTPException, BackgroundTasks
+from starlette.requests import Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -161,8 +162,14 @@ async def chat_with_bot(request: ChatRequest):
     Optionally fetches live Jira data if use_jira_live is True.
     """
     try:
+        # The frontend sends 'query', but the model expects 'message'.
+        # We'll use getattr to handle both for flexibility.
+        message = getattr(request, 'message', None) or getattr(request, 'query', None)
+        if not message:
+            raise HTTPException(status_code=400, detail="Missing 'message' or 'query' in request.")
+
         response = bot_service.chat(
-            message=request.message,
+            message=message,
             conversation_history=request.conversation_history,
             top_k=request.top_k,
             use_jira_live=request.use_jira_live

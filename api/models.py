@@ -22,7 +22,8 @@ class QueryResponse(BaseModel):
 
 class ChatRequest(BaseModel):
     """Request model for chat with the bot."""
-    message: str = Field(..., description="User message")
+    message: Optional[str] = Field(default=None, description="User message")
+    query: Optional[str] = Field(default=None, description="User query (alternative to message)")
     conversation_history: Optional[List[Dict[str, str]]] = Field(default=None, description="Previous conversation messages")
     top_k: int = Field(default=5, description="Number of context documents to retrieve")
     use_jira_live: bool = Field(default=False, description="Fetch live Jira data for the query")

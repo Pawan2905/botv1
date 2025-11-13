@@ -13,7 +13,7 @@ import time
 
 from config import settings
 from storage.chroma_store import ChromaStore
-from storage.embeddings import get_embedding_function
+from storage.embeddings import AzureOpenAIEmbeddings
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,13 @@ try:
         persist_directory=settings.chroma_persist_directory,
         collection_name=settings.chroma_user_history_collection_name,
     )
-    embedding_function = get_embedding_function()
+    embedding_function = AzureOpenAIEmbeddings(
+        endpoint=settings.azure_openai_endpoint,
+        api_key=settings.azure_openai_api_key,
+        deployment_name=settings.azure_openai_embedding_deployment_name,
+        api_version=settings.azure_openai_api_version,
+        use_apim=settings.use_apim
+    )
     logger.info("ChromaDB for user history initialized successfully.")
 except Exception as e:
     logger.error(f"Failed to initialize ChromaDB for user history: {e}")

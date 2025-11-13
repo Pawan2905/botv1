@@ -93,9 +93,9 @@ class Settings(BaseSettings):
     api_port: int = Field(default=8000, env="API_PORT")
 
     # Microsoft Teams Adapter Configuration
-    microsoft_app_id: Optional[str] = Field(default=None, env="MicrosoftAppId")
-    microsoft_app_password: Optional[str] = Field(default=None, env="MicrosoftAppPassword")
-    rag_bot_api_url: Optional[str] = Field(default=None, env="RagBotApiUrl")
+    microsoft_app_id: Optional[str] = Field(default=None, alias="MicrosoftAppId")
+    microsoft_app_password: Optional[str] = Field(default=None, alias="MicrosoftAppPassword")
+    rag_bot_api_url: Optional[str] = Field(default=None, alias="RagBotApiUrl")
     
     class Config:
         env_file = ".env"
