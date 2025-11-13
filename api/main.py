@@ -1,7 +1,10 @@
 """FastAPI application for the RAG bot."""
 
 import logging
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from typing import Optional
@@ -54,6 +57,10 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Mount static files
+app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates")
+
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -64,14 +71,10 @@ app.add_middleware(
 )
 
 
-@app.get("/", tags=["Root"])
-async def root():
-    """Root endpoint."""
-    return {
-        "message": "Confluence & Jira RAG Bot API",
-        "version": "1.0.0",
-        "docs": "/docs"
-    }
+@app.get("/", response_class=HTMLResponse, tags=["Root"])
+async def root(request: Request):
+    """Serve the chat UI."""
+    return templates.TemplateResponse("index.html", {"request": request})
 
 
 @app.get("/health", response_model=HealthResponse, tags=["Health"])
